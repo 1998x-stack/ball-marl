@@ -7,12 +7,17 @@ import torch
 from algorithms.mappo import MAPPO
 from environments.pettingzoo_env import BallMARLEnv
 from actions.masks import safe_action
+from engine.rules import rules_digest, rules_from_yaml
+from training.artifacts import atomic_write_json, sha256_file
 
 
 def scripted_action(env,player,kind='heuristic',rng=None):
-    rng=rng or np.random.default_rng(0)
+    if rng is None:
+        rng=np.random.default_rng(0)
     center=env.world.centroid(player)
-    candidates=[b for b in env.world.balls if b.owner=='pellet']
+    view=env.rules['view_radius']
+    candidates=[b for b in env.world.balls if b.owner=='pellet'
+                and np.linalg.norm(np.array([b.x,b.y])-center) <= view]
     if kind=='random' or not candidates:
         direction=rng.uniform(-1,1,2)
     else:
@@ -23,17 +28,22 @@ def scripted_action(env,player,kind='heuristic',rng=None):
 
 
 def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3):
+    if episodes < 1 or max_steps < 1 or epochs < 1 or seed < 0:
+        raise ValueError('episodes, max_steps and epochs must be >=1 and seed nonnegative')
     torch.manual_seed(seed)
     torch.set_num_threads(1)
     cfg={'max_policy_steps':int(max_steps)}
-    env=BallMARLEnv(rules=__import__('engine.world',fromlist=['rules_from_yaml']).rules_from_yaml(**cfg),seed=seed)
+    env=BallMARLEnv(rules=rules_from_yaml(**cfg),seed=seed)
     obs,_=env.reset(seed=seed)
     learner=MAPPO(len(obs[env.agents[0]]['features']),len(env.state(0)),gamma=env.rules['discount_gamma'],epochs=epochs)
-    output=Path(out);output.mkdir(parents=True,exist_ok=True)
-    rng=np.random.default_rng(seed+999)
+    output=Path(out)
+    output.mkdir(parents=True,exist_ok=True)
+    if any((output / x).exists() for x in ('policy.pt','policy.pt.sha256','train.jsonl','manifest.json')):
+        raise FileExistsError(f'run directory contains existing artifacts: {output}; choose a new --out')
     summary=[]
     for ep in range(episodes):
         obs,_=env.reset(seed=seed+ep)
+        rng=np.random.default_rng(np.random.SeedSequence([seed,ep,999]))
         traces={p:[] for p in env.possible_agents if p.startswith('team_0/')}
         terminal_info=None
         while env.agents:
@@ -68,8 +78,15 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3):
         summary.append(result)
         with (output/'train.jsonl').open('a',encoding='utf-8') as f:
             f.write(json.dumps(result,ensure_ascii=False)+'\n')
-    metadata={'seed':seed,'episodes':episodes,'rules':env.rules,'mode':'scripted_opponent',
+    metadata={'seed':seed,'episodes':episodes,'rules':env.rules,
+              'rules_hash':rules_digest(env.rules),
+              'observation_dim':len(obs[env.possible_agents[0]]['features']),
+              'critic_state_dim':len(env.state(0)),
+              'training_algorithm':'shared_actor_central_critic_ppo',
+              'torch_version':str(torch.__version__), 'numpy_version':np.__version__,
+              'mode':'scripted_opponent',
               'note':'Proof-of-pipeline only, not verified commercial mechanics.'}
     learner.save(output/'policy.pt',metadata)
-    (output/'manifest.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2),encoding='utf-8')
+    metadata['checkpoint_sha256']=sha256_file(output/'policy.pt')
+    atomic_write_json(output/'manifest.json',metadata)
     return summary,learner
