@@ -34,3 +34,13 @@ Do not assume split is profitable from immediate consumption alone. Evaluate net
 - Friendly mass transfer cannot count as newly created team mass.
 - Hazard-triggered fragmentation is distinguishable from mass creation.
 - A teammate that enables a kill need not be the agent recording the final consumption event.
+
+
+## V2: tactics as testable decision problems
+For each maneuver define preconditions, action sequence, success metric, counterplay and failure label. A split chase is viable only if (i) the projected split fragment can consume the target, (ii) the reachable trajectory intersects the target's feasible escape region, and (iii) the resulting fragment configuration does not create unacceptable counter-consumption exposure. Report success over matched start states rather than anecdotal clips.
+
+### Team-level coordination taxonomy
+**Resource allocation:** which player should hold mass; **spatial coordination:** two-sided interception, screen, escape corridor; **temporal coordination:** feed then split, split then merge, hazard timing; **role adaptation:** switch core/support/scout when mass ordering changes. Track total team mass and concentration ratio separately. Feeding can reduce immediate team mass yet increase future consumption odds.
+
+### Tactical benchmark contract
+Each scenario declares `scenario_id, setup_hash, legal_actions, scripted_baselines, win_condition, horizon, confounders`. For bait/encircle, verify that neither solo actor can secure the prey under the same enemy policy. For protection, compare the same threat with/without intervention. Include failed and successful trajectories; do not use event labels as reward without a controlled study.
