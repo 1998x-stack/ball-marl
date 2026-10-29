@@ -22,6 +22,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install --upgrade pip
+      # CPU-only CI avoids multi-GB CUDA wheels and keeps Python versions comparable.
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install -e '.[test,pettingzoo]'
       - run: python -m pip check
       - run: python -m compileall -q engine environments observations actions rewards algorithms credit_assignment league evaluation training
