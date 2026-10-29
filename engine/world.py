@@ -9,19 +9,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-DEFAULT_RULES = Path(__file__).resolve().parents[1] / 'specifications' / 'game_rules.yaml'
-
-
-def rules_from_yaml(path=None, **overrides):
-    with open(path or DEFAULT_RULES, encoding='utf-8') as stream:
-        cfg = yaml.safe_load(stream)
-    cfg.update(overrides)
-    assert cfg['teams'] == 2, 'research-v0 supports two teams only'
-    assert cfg['players_per_team'] >= 1
-    assert 0 < cfg['eject_efficiency'] <= 1
-    assert cfg['substeps'] >= 1 and cfg['physics_dt'] > 0
-    return cfg
-
+from engine.rules import rules_from_yaml, validate_rules, rules_digest
 
 @dataclass
 class Ball:
@@ -41,7 +29,8 @@ class Ball:
 
 class World:
     def __init__(self, rules=None):
-        self.rules = dict(rules or rules_from_yaml())
+        self.rules = validate_rules(rules if rules is not None else rules_from_yaml())
+        self.rules_hash = rules_digest(self.rules)
         self.reset(0)
 
     def reset(self, seed):
@@ -53,13 +42,15 @@ class World:
         self.players = [f'team_{team}/player_{i}' for team in range(2)
                         for i in range(self.rules['players_per_team'])]
         self.events = []
+        self.next_event_id = 0
+        self.event_chain_hash = '0' * 64
         self.external_in = 0.0
         self.external_out = 0.0
         for i, player in enumerate(self.players):
             team = i // self.rules['players_per_team']
             idx = i % self.rules['players_per_team']
-            x = (25 if team == 0 else 75) + 5 * idx
-            y = 25 + 13 * idx
+            x = self.rules['width'] * (0.25 if team == 0 else 0.75)
+            y = self.rules['height'] * (idx + 1) / (self.rules['players_per_team'] + 1)
             self.add(player, x, y, self.rules['initial_mass'], external=True)
         for _ in range(self.rules['pellet_count']):
             self.spawn_pellet()
@@ -68,6 +59,9 @@ class World:
     def add(self, owner, x, y, mass, *, external=False, merge_at=0):
         if not (math.isfinite(mass) and mass > 0):
             raise ValueError('mass must be finite and positive')
+        if not (math.isfinite(x) and math.isfinite(y)
+                and 0 <= x <= self.rules['width'] and 0 <= y <= self.rules['height']):
+            raise ValueError('ball coordinates outside arena or nonfinite')
         b = Ball(self.next_id, owner, float(x), float(y), float(mass), merge_at=merge_at)
         self.next_id += 1
         self.balls.append(b)
@@ -100,30 +94,68 @@ class World:
                           weights=[b.mass for b in balls])
 
     def _log(self, kind, **details):
-        self.events.append({'tick': self.tick, 'type': kind, **details})
+        event = {'event_id': self.next_event_id, 'tick': self.tick,
+                 'type': kind, **details}
+        self.next_event_id += 1
+        self.events.append(event)
+        encoded = json.dumps(event, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        self.event_chain_hash = hashlib.sha256(
+            (self.event_chain_hash + encoded).encode('utf-8')).hexdigest()
 
-    def snapshot(self):
-        return {'seed': self.seed, 'tick': self.tick, 'next_id': self.next_id,
-                'balls': [asdict(b) for b in sorted(self.balls, key=lambda x: x.id)],
-                'rng_state': copy.deepcopy(self.rng.bit_generator.state),
-                'external_in': self.external_in, 'external_out': self.external_out,
-                'events': copy.deepcopy(self.events), 'rules': copy.deepcopy(self.rules)}
+    def snapshot(self, *, include_events=True):
+        result = {'seed': self.seed, 'tick': self.tick, 'next_id': self.next_id,
+                  'schema_version': 2, 'rules_hash': self.rules_hash,
+                  'next_event_id': self.next_event_id,
+                  'event_chain_hash': self.event_chain_hash,
+                  'balls': [asdict(b) for b in sorted(self.balls, key=lambda x: x.id)],
+                  'rng_state': copy.deepcopy(self.rng.bit_generator.state),
+                  'external_in': self.external_in, 'external_out': self.external_out,
+                  'rules': copy.deepcopy(self.rules)}
+        if include_events:
+            result['events'] = copy.deepcopy(self.events)
+        return result
 
     @classmethod
     def from_snapshot(cls, state):
+        if state.get('schema_version') != 2 or state.get('rules_hash') != rules_digest(state['rules']):
+            raise ValueError('snapshot version or rules integrity check failed')
+        if 'events' not in state:
+            raise ValueError('cannot restore snapshot without event history')
+        chain = '0' * 64
+        for index, event in enumerate(state['events']):
+            if event.get('event_id') != index:
+                raise ValueError('event sequence integrity failed')
+            encoded = json.dumps(event, sort_keys=True, separators=(',', ':'), allow_nan=False)
+            chain = hashlib.sha256((chain + encoded).encode('utf-8')).hexdigest()
+        if chain != state.get('event_chain_hash') or len(state['events']) != state.get('next_event_id'):
+            raise ValueError('snapshot event chain integrity failed')
         world = cls(state['rules'])
         world.seed = state['seed']; world.tick = state['tick']
         world.next_id = state['next_id']
         world.balls = [Ball(**b) for b in state['balls']]
+        ids = [b.id for b in world.balls]
+        if (len(ids) != len(set(ids)) or any(not isinstance(i, int) or i < 0 for i in ids)
+                or state['next_id'] <= max(ids, default=-1)):
+            raise ValueError('snapshot entity ID integrity failed')
+        for b in world.balls:
+            if (b.owner not in world.players and b.owner != 'pellet'
+                    or not (math.isfinite(b.x) and math.isfinite(b.y)
+                            and math.isfinite(b.mass) and math.isfinite(b.vx)
+                            and math.isfinite(b.vy))
+                    or b.mass <= 0 or not (0 <= b.x <= world.rules['width'])
+                    or not (0 <= b.y <= world.rules['height'])):
+                raise ValueError('invalid entity in snapshot')
         world.rng = np.random.default_rng()
         world.rng.bit_generator.state = copy.deepcopy(state['rng_state'])
         world.external_in = state['external_in']
         world.external_out = state['external_out']
         world.events = copy.deepcopy(state['events'])
+        world.next_event_id = state['next_event_id']
+        world.event_chain_hash = state['event_chain_hash']
         return world
 
     def digest(self):
-        payload = json.dumps(self.snapshot(), sort_keys=True, separators=(',', ':'))
+        payload = json.dumps(self.snapshot(include_events=False), sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def _validate(self, actions):
@@ -193,28 +225,8 @@ class World:
             b.y = float(np.clip(b.y + dt * b.vy, 0., self.rules['height']))
 
     def _collide(self):
-        # Deterministic O(n^2) reference implementation, optimized backend later.
-        alive = {b.id: b for b in self.balls}
-        ordered = sorted(self.balls, key=lambda b: b.id)
-        for eater in ordered:
-            if eater.id not in alive or eater.owner == 'pellet':
-                continue
-            for prey in ordered:
-                if prey.id not in alive or prey.id == eater.id or prey.owner == eater.owner:
-                    continue
-                # Research-v0 excludes consuming friendly players; ejected matter is neutral pellet.
-                if prey.owner != 'pellet' and eater.owner.split('/')[0] == prey.owner.split('/')[0]:
-                    continue
-                if eater.mass < self.rules['eat_ratio'] * prey.mass:
-                    continue
-                distance = math.hypot(eater.x - prey.x, eater.y - prey.y)
-                threshold = eater.radius - self.rules['penetration'] * prey.radius
-                if distance <= threshold:
-                    eater.mass += prey.mass
-                    del alive[prey.id]
-                    self._log('consume', actor=eater.owner, target=prey.owner,
-                              eater=eater.id, prey=prey.id, mass=prey.mass)
-        self.balls = sorted(alive.values(), key=lambda b: b.id)
+        from engine.collision import resolve_consumption
+        resolve_consumption(self)
 
     def _merge(self):
         for owner in self.players:
