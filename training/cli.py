@@ -17,6 +17,7 @@ def main(argv=None):
     t=sub.add_parser('train');t.add_argument('--episodes',type=int,default=5)
     t.add_argument('--steps',type=int,default=40);t.add_argument('--seed',type=int,default=42)
     t.add_argument('--out',default='runs/smoke')
+    t.add_argument('--players-per-team',type=int,default=2)
     e=sub.add_parser('evaluate');e.add_argument('--checkpoint');e.add_argument('--episodes',type=int,default=5)
     e.add_argument('--seed',type=int,default=1000);e.add_argument('--steps',type=int)
     e.add_argument('--trace-dir')
@@ -30,7 +31,8 @@ def main(argv=None):
     m=sub.add_parser('migrate-checkpoint');m.add_argument('--source',required=True);m.add_argument('--target',required=True)
     args=parser.parse_args(argv)
     if args.command=='train':
-        report,_=train(episodes=args.episodes,max_steps=args.steps,out=args.out,seed=args.seed)
+        report,_=train(episodes=args.episodes,max_steps=args.steps,out=args.out,seed=args.seed,
+                       players_per_team=args.players_per_team)
         print(json.dumps(report[-1],indent=2))
     elif args.command=='evaluate':
         print(json.dumps(evaluate(args.checkpoint,episodes=args.episodes,max_steps=args.steps,
