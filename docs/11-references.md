@@ -15,3 +15,7 @@ Game-specific values in this documentation are **candidate engineering parameter
 
 ## Reproduction checklist
 Pin dependency versions and bibliographic links at implementation time. Validate publication identifiers before formal citation in a paper. Track whether each conclusion comes from a peer-reviewed result, open-source implementation, declared simulator model or independent empirical measurement.
+
+
+## V2 claim-to-source discipline
+PettingZoo Parallel API: https://pettingzoo.farama.org/api/parallel/ (simultaneous action semantics). MAPPO official code: https://github.com/marlbenchmark/on-policy (baseline implementation). COMA: https://ojs.aaai.org/index.php/AAAI/article/view/11794 (counterfactual action baseline). PBRS: https://www.cs.utexas.edu/~pstone/Courses/394Rspring07/resources/NgHR99.pdf (conditions on policy invariance). Melting Pot: https://deepmind.google/blog/melting-pot-an-evaluation-suite-for-multi-agent-reinforcement-learning/ (social generalization). None establishes official ball-game physics; all numerical game parameters require separate empirical provenance.
