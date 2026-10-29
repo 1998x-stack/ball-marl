@@ -1,0 +1,17 @@
+# Lean, isolated local arcade container: PyTorch is not needed for rule-based play.
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app \
+    BALL_MARL_LOG_DIR=/app/runs/web/logs
+WORKDIR /app
+RUN pip install --no-cache-dir 'numpy>=1.24' 'PyYAML>=6' 'fastapi>=0.110' \
+    'uvicorn[standard]>=0.27' 'loguru>=0.7'
+COPY engine/ engine/
+COPY environments/ environments/
+COPY observations/ observations/
+COPY rewards/ rewards/
+COPY specifications/ specifications/
+COPY game_server/ game_server/
+RUN mkdir -p /app/runs/web/logs && chown -R 10001:10001 /app/runs
+USER 10001:10001
+EXPOSE 8000
+CMD ["python", "-m", "game_server", "--host", "0.0.0.0", "--port", "8000"]

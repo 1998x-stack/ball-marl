@@ -1,0 +1,12 @@
+.git
+.github
+__pycache__
+*.pyc
+.pytest_cache
+runs
+build
+dist
+*.egg-info
+.venv
+.gitignore
+*.zip

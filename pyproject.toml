@@ -3,20 +3,24 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "ball-marl"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reproducible ball-consumption multi-agent reinforcement learning research sandbox"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "torch>=2.1", "PyYAML>=6"]
 [project.optional-dependencies]
 pettingzoo = ["gymnasium>=1.0", "pettingzoo>=1.24"]
 test = ["pytest>=8"]
+game = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "loguru>=0.7"]
+game-test = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "loguru>=0.7", "httpx>=0.27"]
 [project.scripts]
 ball-marl = "training.cli:main"
+ball-marl-play = "game_server.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engine*", "environments*", "observations*", "actions*", "rewards*", "algorithms*", "credit_assignment*", "league*", "evaluation*", "training*", "specifications*"]
+include = ["engine*", "environments*", "observations*", "actions*", "rewards*", "algorithms*", "credit_assignment*", "league*", "evaluation*", "training*", "game_server*", "specifications*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
 specifications = ["*.yaml"]
+game_server = ["static/*.html", "static/*.css", "static/*.js"]

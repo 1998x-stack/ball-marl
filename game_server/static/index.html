@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b1015">
+  <meta name="description" content="Ball-MARL Arena — 基于真实多智能体引擎的本地交互游戏">
+  <title>ORBIT ARENA / Ball-MARL</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-symbol" aria-hidden="true"><div class="brand-core"></div><div class="brand-satellite"></div></div><div><span class="brand-title">ORBIT<span class="brand-accent">.</span>ARENA</span><span class="brand-subtitle">BALL-MARL RESEARCH SIMULATOR</span></div></div>
+      <div class="topbar-middle"><span class="top-tag">INTERACTIVE SIMULATION</span><span class="top-separator"></span><span class="top-version">ENGINE V0.3</span></div>
+      <div class="topbar-right"><div class="connection-dot" id="connectionDot"></div><span id="connectionText">未连接</span><span class="top-divider"></span><button id="soundButton" class="icon-button" aria-label="切换声音" title="声音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/></svg></button><button id="menuButton" class="icon-button" title="操作说明" aria-label="操作说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.8 9.3a2.5 2.5 0 1 1 4 .8c-.8.7-1.8 1.3-1.8 2.8M12 17h.01"/></svg></button></div>
+    </header>
+    <main class="main-layout">
+      <section class="arena-column" aria-label="游戏区域">
+        <div class="arena-head"><div><div class="eyebrow"><span class="tiny-spark"></span> LIVE MATCH <span class="eyebrow-divider">/</span> <span id="modeLabel">未开始</span></div><h1>主宰这片<span class="gradient-text">竞技场</span><span class="h1-dot">.</span></h1></div><div class="match-id-box"><span class="match-key">MATCH ID</span><span id="matchId">— — — —</span></div></div>
+        <div class="arena-frame" id="arenaFrame"><canvas id="arenaCanvas" aria-label="可交互的球球竞技场"></canvas>
+          <div class="arena-corner top-left"><span class="hud-cross">+</span><span class="canvas-indicator"><i></i> <span id="canvasStatus">STANDBY</span></span></div>
+          <div class="arena-corner top-right"><span id="frameTicker">TICK 0000</span><span class="hud-cross">+</span></div>
+          <div class="canvas-bottom-left"><span class="coordinate-icon">⌖</span><span id="coordinateText">X: -- / Y: --</span></div>
+          <div class="canvas-bottom-right">100 × 100 <span class="hud-divider">/</span> RESEARCH MAP</div>
+          <div class="canvas-toast" id="canvasToast" role="status" aria-live="polite"></div>
+          <div class="mobile-joystick" id="joystick" aria-label="虚拟方向摇杆"><div class="joystick-inner" id="joystickKnob"></div></div>
+          <div class="mobile-buttons"><button id="mobileSplit" aria-label="分身">✦<small>分身</small></button><button id="mobileEject" aria-label="吐球">◉<small>吐球</small></button></div>
+        </div>
+        <div class="arena-toolbar"><div class="toolbar-left"><span class="legend"><i class="legend-dot blue"></i> 我方</span><span class="legend"><i class="legend-dot red"></i> 对手</span><span class="legend"><i class="legend-dot food"></i> 资源</span><span class="toolbar-sep"></span><span class="engine-label">PHYSICS-DRIVEN · SERVER AUTHORITATIVE</span></div><div class="toolbar-right"><button id="pauseButton" class="toolbar-button" disabled><span id="pauseIcon">Ⅱ</span><span id="pauseText">暂停</span><kbd>P</kbd></button><button id="restartButton" class="toolbar-button" disabled><span>↻</span> 重开 <kbd>R</kbd></button></div></div>
+        <div class="footer-details"><span><span class="code-square">⌘</span> POWERED BY <strong>BALL-MARL ENGINE</strong></span><span>此为研究模拟器，非官方游戏规则复刻。<a href="https://github.com/1998x-stack/ball-marl" target="_blank" rel="noreferrer">SOURCE ↗</a></span></div>
+      </section>
+      <aside class="stats-panel" aria-label="比赛信息">
+        <div class="panel-heading"><div class="panel-title">比赛控制台 <span>01 / 03</span></div><span class="panel-live"><i></i> LOCAL</span></div>
+        <div class="time-card"><div class="time-top"><span>TIME REMAINING</span><span id="timePercent">100%</span></div><div class="time-value"><span id="timeValue">01:30</span><span class="time-small">SEC</span></div><div class="progress-track"><div id="timeBar" class="progress-fill"></div></div></div>
+        <div class="card-title">TEAM SCORE <span>TEAM VS TEAM</span></div>
+        <div class="scoreboard"><div class="team-row"><div class="team-identity"><span class="team-emblem team-blue">B</span><span><strong>蓝队 <small>YOUR TEAM</small></strong><span class="team-desc" id="blueTeamCount">等待加入</span></span></div><strong id="blueScore">—</strong></div><div class="score-rule"><span></span><em>VS</em><span></span></div><div class="team-row"><div class="team-identity"><span class="team-emblem team-red">R</span><span><strong>红队 <small>OPPONENT</small></strong><span class="team-desc">附近可见质量</span></span></div><strong id="redScore">—</strong></div><div class="score-bars"><div class="score-bar-blue" id="blueBar"></div><div class="score-bar-red" id="redBar"></div></div></div>
+        <div class="card-title">YOUR PLAYER <span>PLAYER 01</span></div>
+        <div class="player-card"><div class="player-hero"><div class="player-orb"><div class="player-orb-inner">01</div></div><div><div class="player-subhead">BLUE SQUAD / HUMAN</div><div class="player-name">YOU <span class="player-online" id="aliveStatus">READY</span></div></div></div><div class="player-stats"><div><span>总质量</span><strong id="playerMass">—</strong></div><div><span>分身数量</span><strong id="fragmentCount">—</strong></div><div><span>队伍机器人</span><strong id="botCount">—</strong></div></div></div>
+        <div class="card-title">ABILITIES <span>USE YOUR POWER</span></div>
+        <div class="ability-cards"><button id="splitButton" class="ability" disabled><span class="ability-icon split-icon">✦</span><span class="ability-description"><strong>SPLIT</strong><small>快速分身突进</small></span><kbd>SPACE</kbd></button><button id="ejectButton" class="ability" disabled><span class="ability-icon eject-icon">◉</span><span class="ability-description"><strong>EJECT</strong><small>吐出质量孢子</small></span><kbd>E</kbd></button></div>
+        <div class="card-title event-title">ACTIVITY FEED <span>LIVE EVENTS</span></div><div class="activity-feed" id="activityFeed"><div class="empty-activity"><span>◌</span> 开始比赛后显示实时事件</div></div>
+      </aside>
+    </main>
+    <footer class="bottom-bar"><span><i class="footer-status-dot"></i> ENGINE CONNECTED TO LOCAL SERVER</span><span>MOVE <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> OR MOUSE <span class="bottom-divider">/</span> SPLIT <kbd>SPACE</kbd> <span class="bottom-divider">/</span> EJECT <kbd>E</kbd></span><span id="footerSeed">SEED —</span></footer>
+  </div>
+  <div class="overlay" id="startOverlay"><div class="overlay-noise"></div><div class="overlay-content"><div class="pretitle"><span class="pretitle-line"></span> WELCOME TO THE ARENA <span class="pretitle-line"></span></div><div class="overlay-mark"><span class="overlay-orb"></span><span class="orbit-one"></span><span class="orbit-two"></span></div><h2>GROW. <span>DOMINATE.</span><br>SURVIVE.</h2><p>吞噬资源、壮大球体，与队友协同占领竞技场。<br>每一步，都由真实的多智能体物理引擎驱动。</p><div class="mode-heading">SELECT YOUR MATCH MODE <span>01 — 03</span></div><div class="mode-grid"><button class="mode-option" data-mode="duel"><span class="mode-symbol">◉</span><strong>1v1</strong><small>单挑 · QUICK DUEL</small></button><button class="mode-option selected" data-mode="squad"><span class="mode-symbol">◎</span><strong>2v2</strong><small>小队 · SQUAD</small></button><button class="mode-option" data-mode="arena"><span class="mode-symbol">✦</span><strong>5v5</strong><small>团队 · ARENA</small></button></div><button id="playButton" class="play-primary"><span>进入竞技场</span><span class="play-arrow">↗</span></button><div class="overlay-hint">WASD / 鼠标移动 &nbsp;·&nbsp; SPACE 分身 &nbsp;·&nbsp; E 吐球</div></div></div>
+  <div class="result-overlay hidden" id="resultOverlay"><div class="result-card"><div class="result-icon" id="resultIcon">✦</div><div class="pretitle" id="resultPretitle">MATCH COMPLETE</div><h2 id="resultTitle">比赛结束</h2><p id="resultDetail"></p><div class="result-scores"><div><span>BLUE TEAM</span><strong id="resultBlue">0</strong></div><span>—</span><div><span>RED TEAM</span><strong id="resultRed">0</strong></div></div><button id="playAgainButton" class="play-primary"><span>再来一局</span><span>↗</span></button><button class="result-back" id="changeModeButton">← 更换游戏模式</button></div></div>
+  <div class="help-overlay hidden" id="helpOverlay"><div class="help-card"><button class="help-close" id="helpClose" aria-label="关闭">×</button><div class="pretitle">GAME MANUAL</div><h2>如何玩？</h2><p>你操作蓝队的第一名玩家，其他玩家由规则 AI 控制。移动球体吞噬比自己小的资源和对手，比赛结束时队伍质量更高的一方获胜。</p><div class="help-keys"><div><kbd>W A S D</kbd><span>键盘移动</span></div><div><kbd>鼠标</kbd><span>朝光标方向移动</span></div><div><kbd>SPACE</kbd><span>分身（需要足够质量）</span></div><div><kbd>E</kbd><span>吐球（会损耗部分质量）</span></div><div><kbd>P</kbd><span>暂停 / 继续</span></div><div><kbd>R</kbd><span>同种子重新开始</span></div></div><button class="play-primary" id="helpGotIt">明白了 <span>↗</span></button></div></div>
+</body>
+</html>
