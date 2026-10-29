@@ -23,3 +23,13 @@ H5: zero-shot teammate tests expose brittle co-adaptation absent from standard s
 
 ## Explicit limitations
 Counterfactual results are conditional on intervention definition and rollout policy, not unique causal ground truth. Leaderboard performance on a custom simulator is not proof of official-game skill.
+
+
+## V2: requirements traceability and governance
+Requirement IDs use `REQ-<domain>-NNN`. Each requirement maps to one design section, a concrete automated test, a status and an evidence artifact. Modes are explicitly separated: `research_5v5`, `research_multiteam`, and `calibrated_<build>`; never aggregate their leaderboard results. The research simulator is **not** a verified reproduction of the commercial game.
+
+### Evidence review procedure
+Every gameplay constant must include provenance, unit, mode/build, sample count, uncertainty and owner. Unverified parameters fail the `official_parity` gate but may pass the `research_ruleset` gate. Rule changes invalidate dependent golden replays, checkpoints and comparisons. Maintain a change-impact table for physics → observations → rewards → training → evaluation.
+
+### Decision record template
+`ADR-ID; context; options; decision; rejected alternatives; invariants; measurable risk; rollback; owner; date`. Major choices (per-player agent identity, simultaneous semantics, deterministic collision resolution, reward ownership, time-limit terminal semantics) each require an ADR. Acceptance: every REQ-P0 maps to a passing test or an explicitly tracked blocker.
