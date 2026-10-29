@@ -152,6 +152,7 @@ class GameSession:
         self.seed = seed
         self.env.reset(seed=self.seed)
         self.last_center = self.env.world.centroid(self.human_id).copy()
+        self._viewer_centers = {p: self.env.world.centroid(p).copy() for p in self.env.world.players}
         self.controls = ControlState.empty()
         self.paused = False
         self.finished = False
@@ -208,54 +209,68 @@ class GameSession:
                         mass_blue=w.team_mass(0), mass_red=w.team_mass(1)).info("match_finished")
         return self.frame()
 
-    def frame(self) -> dict[str, Any]:
+    def frame(self, viewer_id: str | None = None, *, bot_count: int | None = None,
+              event_feed: list[dict[str, Any]] | None = None,
+              invalid_actions: list[str] | None = None) -> dict[str, Any]:
+        """Viewpoint-scoped render projection; never reveal the other team's total before final.
+
+        The historical /ws/play endpoint defaults to team_0/player_0. Room
+        subscribers pass their own player ID and receive a separate projection.
+        """
+        viewer = viewer_id or self.human_id
+        if viewer not in self.env.possible_agents:
+            raise ValueError('viewer is not a player in this match')
         w = self.env.world
-        own_balls = w.owned(self.human_id)
+        team = int(viewer.split('/')[0].split('_')[1])
+        own_balls = w.owned(viewer)
+        if not hasattr(self, '_viewer_centers'):
+            self._viewer_centers = {}
         if own_balls:
-            self.last_center = w.centroid(self.human_id).copy()
-        center = self.last_center
-        # The displayed viewport and minimap obey the same radius as Actor visibility;
-        # friendly positions are always available as a public team UI convention.
+            self._viewer_centers[viewer] = w.centroid(viewer).copy()
+        center = self._viewer_centers.get(viewer)
+        if center is None:
+            center = w.centroid(viewer).copy()
         balls = []
         visible_enemy_mass = 0.
         for ball in sorted(w.balls, key=lambda b: b.id):
-            friendly = ball.owner.startswith('team_0/')
+            friendly = ball.owner.startswith(f'team_{team}/')
             visible = friendly or self._visible(ball.x, ball.y, center=center)
             if not visible:
                 continue
             if not friendly and ball.owner != 'pellet':
                 visible_enemy_mass += ball.mass
-            balls.append({"id": ball.id, "owner": ball.owner,
-                          "x": round(ball.x, 4), "y": round(ball.y, 4),
-                          "r": round(ball.radius, 4), "mass": round(ball.mass, 3),
-                          "vx": round(ball.vx, 4), "vy": round(ball.vy, 4)})
-        own_mass = w.team_mass(0)
-        red_mass = w.team_mass(1)
+            balls.append({'id': ball.id, 'owner': ball.owner,
+                          'x': round(ball.x, 4), 'y': round(ball.y, 4),
+                          'r': round(ball.radius, 4), 'mass': round(ball.mass, 3),
+                          'vx': round(ball.vx, 4), 'vy': round(ball.vy, 4)})
+        ally_mass = w.team_mass(team)
+        opponent_mass = w.team_mass(1-team)
         remaining = max(0, self.rules['max_policy_steps'] - self.env.policy_steps)
         outcome = None
         if self.finished:
-            outcome = {"blue_mass": round(own_mass, 2), "red_mass": round(red_mass, 2),
-                       "winner": 'blue' if own_mass > red_mass else 'red' if red_mass > own_mass else 'draw'}
-        masks = w.action_masks(self.human_id)
-        return {"type": "frame", "session_id": self.session_id, "seed": self.seed,
-                "mode": self.mode, "tick": self.env.policy_steps, "hz": POLICY_HZ,
-                "paused": self.paused, "finished": self.finished,
-                "arena": {"width": self.rules['width'], "height": self.rules['height'],
-                          "view_radius": self.rules['view_radius']},
-                "player": {"id": self.human_id, "x": round(float(center[0]), 4),
-                           "y": round(float(center[1]), 4), "mass": round(w.mass(self.human_id), 2),
-                           "alive": bool(own_balls), "fragments": len(own_balls)},
-                "score": {"blue_mass": round(own_mass, 2),
-                          "red_visible_mass": round(visible_enemy_mass, 2),
-                          "red_mass": round(red_mass, 2) if self.finished else None},
-                "time_left": round(remaining / POLICY_HZ, 1),
-                "duration": round(self.rules['max_policy_steps'] / POLICY_HZ, 1),
-                "bots": len(self.env.possible_agents) - 1,
-                "visible_balls": balls,
-                "event_feed": list(self.events_visible),
-                "invalid_actions": list(self.last_invalid),
-                "abilities": {"split": bool(masks['split'][1]), "eject": bool(masks['eject'][1])},
-                "outcome": outcome}
+            outcome = {'blue_mass': round(ally_mass, 2), 'red_mass': round(opponent_mass, 2),
+                       'winner': 'blue' if ally_mass > opponent_mass else
+                       'red' if opponent_mass > ally_mass else 'draw'}
+        masks = w.action_masks(viewer)
+        return {'type': 'frame', 'session_id': self.session_id, 'seed': self.seed,
+                'mode': self.mode, 'tick': self.env.policy_steps, 'hz': POLICY_HZ,
+                'paused': self.paused, 'finished': self.finished,
+                'arena': {'width': self.rules['width'], 'height': self.rules['height'],
+                          'view_radius': self.rules['view_radius']},
+                'player': {'id': viewer, 'x': round(float(center[0]), 4),
+                           'y': round(float(center[1]), 4), 'mass': round(w.mass(viewer), 2),
+                           'alive': bool(own_balls), 'fragments': len(own_balls)},
+                'score': {'blue_mass': round(ally_mass, 2),
+                          'red_visible_mass': round(visible_enemy_mass, 2),
+                          'red_mass': round(opponent_mass, 2) if self.finished else None},
+                'time_left': round(remaining / POLICY_HZ, 1),
+                'duration': round(self.rules['max_policy_steps'] / POLICY_HZ, 1),
+                'bots': bot_count if bot_count is not None else len(self.env.possible_agents)-1,
+                'visible_balls': balls,
+                'event_feed': list(self.events_visible) if event_feed is None else event_feed,
+                'invalid_actions': list(self.last_invalid) if invalid_actions is None else invalid_actions,
+                'abilities': {'split': bool(masks['split'][1]), 'eject': bool(masks['eject'][1])},
+                'outcome': outcome}
 
 
 def _check_seed(seed: int) -> int:
