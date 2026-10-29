@@ -15,3 +15,13 @@ Record environment steps, physics steps, wall clock, CPU/GPU hours, FPS, invalid
 
 ## Training separation
 Use training environments for learning, fixed validation scenarios for hyperparameter selection, and untouched test seeds/policies for final report. Prevent checkpoint selection on test opponents.
+
+
+## V2: rollout and optimization protocol
+Collect tuples `(obs_t, global_state_t, action_t, legal_mask_t, logp_t, value_t, reward_t, terminated_t, truncated_t, recurrent_state_t, opponent_id)`. Compute GAE with bootstrap for truncation and zero bootstrap for genuine termination. Use time-major sequences for recurrent PPO and preserve episode boundaries; mask padded timesteps in losses. Advantage normalization is computed over valid samples only.
+
+### Curriculum gate
+Each stage must publish a frozen evaluation manifest and promotion threshold (e.g. beat a scripted baseline on held-out seeds with a lower confidence bound above a predeclared threshold). Do not promote based on training return. Preserve previous-stage tests to detect forgetting.
+
+### League robustness
+Opponent sampling is versioned; sample historical policies and targeted exploiters, freeze opponent weights during each match, and avoid leaking opponent IDs if they are not available in deployment. Use paired matches with side swaps. Log policy diversity, exploit rates, stale-policy fraction and pool composition. Checkpoint actor, critic, optimizer, normalizer, RNG and league snapshot together.
