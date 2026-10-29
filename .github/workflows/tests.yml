@@ -24,15 +24,16 @@ jobs:
       - run: python -m pip install --upgrade pip
       # CPU-only CI avoids multi-GB CUDA wheels and keeps Python versions comparable.
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: python -m pip install -e '.[test,pettingzoo]'
+      - run: python -m pip install -e '.[test,pettingzoo,game-test]'
       - run: python -m pip check
-      - run: python -m compileall -q engine environments observations actions rewards algorithms credit_assignment league evaluation training
+      - run: python -m compileall -q engine environments observations actions rewards algorithms credit_assignment league evaluation training game_server
       - run: python -m pytest -q
+      - run: node --check game_server/static/app.js
       - run: python -m scripts.release_gate --out runs/ci-gate-${{ matrix.python-version }}
       - name: Package installation check
         run: |
           python -m pip wheel --no-deps --no-build-isolation -w dist .
-          python -c "import glob,zipfile; p=glob.glob('dist/*.whl')[0]; z=zipfile.ZipFile(p); assert 'specifications/game_rules.yaml' in z.namelist()"
+          python -c "import glob,zipfile; p=glob.glob('dist/*.whl')[0]; z=zipfile.ZipFile(p); assert 'specifications/game_rules.yaml' in z.namelist(); assert 'game_server/static/index.html' in z.namelist(); assert 'game_server/static/app.js' in z.namelist(); assert 'game_server/static/styles.css' in z.namelist()"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

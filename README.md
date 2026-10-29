@@ -53,27 +53,50 @@ The version identifiers and evidence statuses in `specifications/` are **PROPOSE
 
 **Research honesty:** an agent trained for 5–40 episodes generally performs worse than hand-coded pellet collection. Report that baseline rather than treating a successful training loop as policy quality.
 
-## Engineering V0.2 hardening — production readiness is NOT claimed
 
-This research prototype now includes strict rule validation and SHA256 ruleset fingerprints, arena-relative spawn layouts, deterministic geometric collision precedence, incremental event hash chains, corruption-rejecting checkpoints, non-overwriting seeded training, per-match independent RNG, side-swapped paired evaluation, and 5v5 CPU reference benchmarking.
+## Engineering V0.2 hardening (production-readiness is NOT claimed)
+
+The reference prototype now includes stricter rule validation with a SHA256
+ruleset digest, arena-relative spawns, event hash chaining, deterministic
+geometric collision precedence, checkpoint integrity and atomic persistence,
+per-match RNG isolation, side-swapped paired tournaments with cluster bootstrap,
+5v5 performance measurement and a one-command release gate.
 
 ```bash
 python -m pytest -q
-python -m scripts.release_gate --out runs/gate-001
+python -m scripts.release_gate --out runs/gate-local-001
 python -m training.cli benchmark --players-per-team 5 --episodes 3 --steps 50
 python -m training.cli evaluate --checkpoint runs/demo/policy.pt --episodes 20 --side-swaps
 ```
 
-Historical V0.1 checkpoints lack checksum sidecars and are rejected by default. Migrate only a **trusted** legacy checkpoint explicitly:
+**Compatibility:** historical V0.1 checkpoints have no checksum sidecar and
+are rejected by default. Explicitly migrate a trusted artifact with
+`python -m training.cli migrate-checkpoint --source OLD --target NEW`. The
+legacy path uses PyTorch `weights_only=True` and never loads arbitrary Python
+objects. Checksums detect accidental corruption, **not authenticity**.
+
+See [production-readiness matrix](docs/PRODUCTION_READINESS.md) for verified
+gates and the major open blockers to industrial use. Official PettingZoo
+compliance is tested in CI with the optional dependency installed; local
+fallback tests alone do not establish that compatibility.
+
+## Play the local browser game (v0.3)
+
+The human-playable **ORBIT.ARENA** front end now uses FastAPI/WebSocket to drive
+**the existing `engine.World` through `BallMARLEnv`** — no duplicated browser
+physics or oracle-controlled opponent scores.
 
 ```bash
-python -m training.cli migrate-checkpoint --source OLD.pt --target NEW.pt
+python -m pip install -e '.[game,game-test,test]'
+python -m game_server --host 127.0.0.1 --port 8000
+# visit http://127.0.0.1:8000
 ```
 
-A SHA256 sidecar is a corruption detector, not a publisher signature. Checkpoints use restricted PyTorch `weights_only=True` loading. Current local tests: **54 passed, 1 skipped (official optional PettingZoo dependencies absent locally)**. Hosted CI must independently confirm its results. The model is not yet competitively strong; implementation does not claim commercial-game rules parity.
+Alternative local Docker build: `docker compose -f compose.game.yml up --build`.
+Choose 1v1, 2v2 or 5v5. Use WASD/mouse/touch to steer, Space to split,
+E to eject, P to pause, R to restart. Loguru JSONL logs are written under
+`runs/web/logs` (override `BALL_MARL_LOG_DIR`).
 
-See [production-readiness and blockers](docs/PRODUCTION_READINESS.md).
-
-
-### V0.2 collision performance and correctness
-The default reference-engine execution path now uses deterministic spatial hashing; O(N²) all-pairs remains an explicit correctness oracle. On the same local CPU and a five-versus-five workload with 160 pellets and tracemalloc enabled: reference ~3.59 policy steps/sec, grid ~6.69 policy steps/sec, both with the same mass residual. Randomized contact equivalence and paired physical-trajectory tests passed locally. This is a limited measurement, not a throughput SLA or official-game fidelity claim.
+See [game architecture, controls, security boundaries and testing](docs/WEB_ARCADE.md).
+This is a **local, unauthenticated research simulation**, not public multiplayer
+and not an official game implementation. Existing training API remains unchanged.

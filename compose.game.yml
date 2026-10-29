@@ -1,0 +1,18 @@
+services:
+  arcade:
+    build:
+      context: .
+      dockerfile: Dockerfile.game
+    ports:
+      - "127.0.0.1:8000:8000" # do not expose unauthenticated game on a public interface
+    environment:
+      BALL_MARL_LOG_DIR: /app/runs/web/logs
+    volumes:
+      - ./runs/web:/app/runs/web
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
