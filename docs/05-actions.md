@@ -21,3 +21,12 @@ When all split actions are illegal the mask leaves only no-split valid. NaN move
 
 ## Hierarchical option research
 Optional higher-level intentions: farm, pursue, escape, merge, feed, support, hazard-push. Do not hard-code tactics into first baseline. Evaluate whether options improve learning efficiency at matched environment interactions and simulator compute.
+
+
+## V2: execution semantics and policy density
+The action interpreter must return `requested, validated, executed, mask_at_request, reasons, generated_events`. Apply masks against the **pre-action** world state; simultaneous split/eject resolution order is an explicit ruleset choice. Separate control sampling from physics execution to prevent repeated split edges during four substeps.
+
+For squashed Gaussian movement, sample `z~N(mu,sigma)`, set `u=tanh(z)`, and calculate `log p(u)=log N(z;mu,sigma)-sum log(1-tanh(z)^2)` with a numerically stable Jacobian. Combined PPO ratio uses sum of all head log-probabilities; entropy handling for transformed distributions needs an explicit estimator. When `split=1` is masked out, `split=0` remains valid; do not silently replace an illegal sampled action and still optimize its original log-prob.
+
+### Edge cases
+Zero movement vector, saturated joystick, repeated split key, split during merge cooldown, eject at mass threshold, simultaneous split/eject, death mid-repeat, respawn mid-repeat, and maximum fragment count all require golden traces. Track legal-action coverage and invalid request rate. Hierarchical options must have termination conditions and must be evaluated against primitive controls at equal compute.
