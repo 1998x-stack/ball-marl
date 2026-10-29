@@ -9,14 +9,15 @@ from rewards.objective import reward_components
 
 class BallMARLEnv(ParallelEnv):
     metadata = {'name':'ball_marl_research_v0', 'render_modes': ['rgb_array']}
-    def __init__(self, rules=None, seed=0, render_mode=None, strict_action_masks=False):
+    def __init__(self, rules=None, seed=0, render_mode=None, strict_action_masks=False,
+                 collision_backend='grid'):
         from engine.rules import validate_rules
         self.rules=validate_rules(rules if rules is not None else rules_from_yaml())
         if render_mode not in (None, 'rgb_array'):
             raise ValueError('render_mode must be None or rgb_array')
         self.render_mode=render_mode
         self.strict_action_masks=bool(strict_action_masks)
-        self.world=World(self.rules)
+        self.world=World(self.rules,collision_backend=collision_backend)
         self.possible_agents=self.world.players.copy()
         self.agents=[]
         self._obs_spaces={p:spaces.Dict({
