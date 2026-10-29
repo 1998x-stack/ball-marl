@@ -94,6 +94,7 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_
               'observation_dim':len(obs[env.possible_agents[0]]['features']),
               'critic_state_dim':len(env.state(0)),
               'training_algorithm':'shared_actor_central_critic_ppo',
+              'engine_collision_backend':env.world.collision_backend,
               'torch_version':str(torch.__version__), 'numpy_version':np.__version__,
               'mode':'frozen_policy' if frozen_opponent is not None else 'scripted_opponent',
               'opponent_checkpoint_sha256':sha256_file(opponent_checkpoint) if frozen_opponent is not None else None,
