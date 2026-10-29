@@ -120,19 +120,43 @@ class MAPPO:
         return metrics
 
     def save(self,path,metadata=None):
+        """Atomic versioned checkpoint with checksum sidecar."""
         from pathlib import Path
-        Path(path).parent.mkdir(parents=True,exist_ok=True)
-        torch.save({'actor':self.actor.state_dict(),'critic':self.critic.state_dict(),
+        import os
+        import tempfile
+        from training.artifacts import sha256_file, atomic_write_bytes
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=f'.{path.name}.', dir=path.parent)
+        os.close(fd)
+        try:
+            torch.save({'actor':self.actor.state_dict(),'critic':self.critic.state_dict(),
                     'optimizer':self.optimizer.state_dict(),
                     'obs_dim':self.actor.body[0].in_features,
                     'state_dim':self.critic.model[0].in_features,
-                    'hyperparameters':{'gamma':self.gamma,'lam':self.lam,'clip':self.clip},
-                    'metadata':metadata or {}},path)
+                    'hyperparameters':{'gamma':self.gamma,'lam':self.lam,'clip':self.clip,
+                                       'epochs':self.epochs},
+                    'checkpoint_schema': 2,
+                    'metadata':metadata or {}}, tmp_path)
+            os.replace(tmp_path, path)
+            atomic_write_bytes(str(path)+'.sha256', (sha256_file(path)+'\n').encode('ascii'))
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     @classmethod
-    def load(cls,path):
+    def load(cls,path,*,allow_legacy=False):
+        from training.artifacts import verify_checksum
+        verify_checksum(path,allow_legacy=allow_legacy)
         obj=torch.load(path,map_location='cpu',weights_only=True)
-        model=cls(obj['obs_dim'],obj['state_dim'])
+        version=obj.get('checkpoint_schema',1)
+        if version not in (1,2):
+            raise ValueError(f'unsupported checkpoint schema {version}')
+        if version == 1 and not allow_legacy:
+            raise ValueError('legacy checkpoint requires allow_legacy=True')
+        hp=obj.get('hyperparameters',{})
+        model=cls(obj['obs_dim'],obj['state_dim'],gamma=hp.get('gamma',.99),
+                  lam=hp.get('lam',.95),clip=hp.get('clip',.2),epochs=hp.get('epochs',3))
         model.actor.load_state_dict(obj['actor'])
         model.critic.load_state_dict(obj['critic'])
         model.optimizer.load_state_dict(obj['optimizer'])
