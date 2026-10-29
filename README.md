@@ -70,6 +70,10 @@ Historical V0.1 checkpoints lack checksum sidecars and are rejected by default. 
 python -m training.cli migrate-checkpoint --source OLD.pt --target NEW.pt
 ```
 
-A SHA256 sidecar is a corruption detector, not a publisher signature. Checkpoints use restricted PyTorch `weights_only=True` loading. Current local tests: **49 passed, 1 skipped (official optional PettingZoo dependencies absent locally)**. Hosted CI must independently confirm its results. The model is not yet competitively strong; implementation does not claim commercial-game rules parity.
+A SHA256 sidecar is a corruption detector, not a publisher signature. Checkpoints use restricted PyTorch `weights_only=True` loading. Current local tests: **54 passed, 1 skipped (official optional PettingZoo dependencies absent locally)**. Hosted CI must independently confirm its results. The model is not yet competitively strong; implementation does not claim commercial-game rules parity.
 
 See [production-readiness and blockers](docs/PRODUCTION_READINESS.md).
+
+
+### V0.2 collision performance and correctness
+The default reference-engine execution path now uses deterministic spatial hashing; O(N²) all-pairs remains an explicit correctness oracle. On the same local CPU and a five-versus-five workload with 160 pellets and tracemalloc enabled: reference ~3.59 policy steps/sec, grid ~6.69 policy steps/sec, both with the same mass residual. Randomized contact equivalence and paired physical-trajectory tests passed locally. This is a limited measurement, not a throughput SLA or official-game fidelity claim.
