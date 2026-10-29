@@ -45,7 +45,7 @@ def evaluate(policy_path=None,episodes=4,max_steps=None,seed=1000,
         raise ValueError('checkpoint metadata rules hash mismatch')
     if max_steps is not None:
         cfg['max_policy_steps']=max_steps
-    env=BallMARLEnv(cfg)
+    env=BallMARLEnv(cfg,collision_backend=metadata.get('engine_collision_backend','reference'))
     if agent is not None:
         if agent.actor.body[0].in_features != env.observation_space(env.possible_agents[0]).spaces['features'].shape[0]:
             raise ValueError('observation dimension differs from checkpoint')
