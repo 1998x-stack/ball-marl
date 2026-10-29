@@ -1,0 +1,8 @@
+version: obs-v0.1
+self_features: [x_normalized, y_normalized, log_total_mass, log_max_ball, ball_count_normalized, alive]
+other_slots: 10
+other_features: [relative_x, relative_y, log_visible_mass, team_relation, visible]
+pellet_slots: 8
+pellet_features: [relative_x, relative_y, log_mass]
+visibility: euclidean_distance_to_player_centroid
+padding_value: 0.0
