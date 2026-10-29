@@ -28,9 +28,12 @@ class Ball:
 
 
 class World:
-    def __init__(self, rules=None):
+    def __init__(self, rules=None, collision_backend='grid'):
         self.rules = validate_rules(rules if rules is not None else rules_from_yaml())
         self.rules_hash = rules_digest(self.rules)
+        if collision_backend not in ('reference','grid'):
+            raise ValueError('collision_backend must be reference or grid')
+        self.collision_backend = collision_backend
         self.reset(0)
 
     def reset(self, seed):
@@ -105,6 +108,7 @@ class World:
     def snapshot(self, *, include_events=True):
         result = {'seed': self.seed, 'tick': self.tick, 'next_id': self.next_id,
                   'schema_version': 2, 'rules_hash': self.rules_hash,
+                  'collision_backend': self.collision_backend,
                   'next_event_id': self.next_event_id,
                   'event_chain_hash': self.event_chain_hash,
                   'balls': [asdict(b) for b in sorted(self.balls, key=lambda x: x.id)],
@@ -129,7 +133,7 @@ class World:
             chain = hashlib.sha256((chain + encoded).encode('utf-8')).hexdigest()
         if chain != state.get('event_chain_hash') or len(state['events']) != state.get('next_event_id'):
             raise ValueError('snapshot event chain integrity failed')
-        world = cls(state['rules'])
+        world = cls(state['rules'],collision_backend=state.get('collision_backend','reference'))
         world.seed = state['seed']; world.tick = state['tick']
         world.next_id = state['next_id']
         world.balls = [Ball(**b) for b in state['balls']]
