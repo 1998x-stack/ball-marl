@@ -47,3 +47,7 @@ action = {"move": np.array([ux, uy], dtype=np.float32),
 - GRU 截断与 episode 结束不混淆。
 - 同时 split/eject 语义固定，非法动作不导致质量变化。
 - Policy rollout 的 logp 与 learner 重新计算 logp 一致（容差内）。
+
+
+## 9. 补充：输入字典与概率一致性
+每个张量字段需发布字段名、顺序、dtype、单位、归一化区间、mask 和缺失值语义。玩家自身球体位置使用质量加权质心作相对坐标原点；敌人聚合质量仅可来自可见对象。保存 raw action、sample logp、mask、executed action；tanh Gaussian 的 Jacobian 和 masked categorical 重新归一化必须通过 rollout/learner logp 一致性测试。重生时 GRU 重置策略必须版本化。

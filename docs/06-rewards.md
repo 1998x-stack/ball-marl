@@ -20,3 +20,12 @@ Assert: (i) team internal mass transfers alone do not increase total mass; (ii) 
 
 ## Ablations
 R0 terminal only; R1 terminal+naive delta mass (deliberately non-invariant comparator); R2 terminal+PBRS; R3 PBRS+auxiliary predictions. Report fixed-seed win rate, return components, strategy changes, simulator calls and uncertainty.
+
+
+## V2: reward ownership, time limits and telescoping
+For team k, `r_k^objective` is defined only by the chosen competition objective. Every member of team k receives the same team-level training reward for baseline MAPPO; this is a design choice, not an assertion that individual advantages are identical. Opponent rewards need not sum to zero in multi-team rank games.
+
+For finite T, `sum_{t<T}gamma^t F_t = -Phi(s0)+gamma^T Phi(sT)`. Set terminal potential to zero at **true** terminal states; for externally truncated rollouts, do not force zero and bootstrap V from the last state. If match duration is a genuine game rule, its expiry is terminal, not truncation. Any time-dependent beta changes or arbitrary per-event bonuses invalidate the simple invariance argument.
+
+### Reward exploit audit
+Run adversarial scripted agents: transfer-loop, eject-reabsorb-loop, idle-survival, farm-only, repeated-respawn, fragment-spam, and tie-exploitation. Each test asserts objective return and ledger consistency. Train and evaluate with separate `objective_return`, `shaping_return`, `aux_loss` fields. Evaluate model selection using objective results, never shaped reward alone.

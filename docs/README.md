@@ -41,3 +41,7 @@ All numeric defaults are proposed experimental values, subject to calibration. T
 
 ## 阅读及落地建议
 中文 12–16 章细化英文 01–10 章的工程边界。若有冲突，以明确标注的研究假设和可测试的契约为准，提交 Issue 统一修订；不可默默选用某个版本。先执行 S00 规则标定与 S01 引擎验证，再训练 S04 MAPPO。所有内容目前为设计文档，不代表已经通过真实游戏标定或运行实验。
+
+
+## V2 comprehensive review
+Each chapter now has implementation-facing supplements covering invariants, edge cases, statistical protocols or acceptance tests. These remain **design-only** and do not establish game-mechanics parity or completed training. Read the detailed Chinese chapters 12–16 together with the foundational chapters 00–11. Freeze schema and ruleset hashes before implementing S01.

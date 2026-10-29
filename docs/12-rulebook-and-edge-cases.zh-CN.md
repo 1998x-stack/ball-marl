@@ -62,3 +62,7 @@
 
 ## 7. 官方对齐实验
 以“模式+客户端版本+录屏帧率+输入时序”为样本单位。分别测速度-质量曲线、分身射程、吞噬临界比、合并等待时间、吐球损耗、刺球分裂数量；每个参数至少训练/验证两套轨迹，报告置信区间与拟合残差。禁止仅凭玩家攻略确定数值。
+
+
+## 8. 补充：可执行状态机与规则校准
+Player: ACTIVE→ZERO_BALLS→RESPAWN_WAIT→ACTIVE，或 ZERO_BALLS→ELIMINATED，由模式控制；Ball: CREATED→MOVING→MERGE_ELIGIBLE→MERGED/CONSUMED。吞噬后实体 tombstone，禁止同 tick 二次消费。高速分身采用子步或连续碰撞检测以避免穿透。官方对齐必须提供游戏版本、模式、录屏帧率、动作时序、测量置信区间与独立验证轨迹；没有证据时保持 UNKNOWN。

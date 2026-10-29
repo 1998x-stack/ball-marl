@@ -30,3 +30,13 @@ Hold out team policies, adversaries, map sizes, food distributions, start mass r
 
 ## Reproducibility gate
 Every published plot references manifest, raw match results, code commit, checkpoint digest, ruleset and CI status. Disclose failed seeds and simulator exploits.
+
+
+## V2: preregistered tournament and statistics
+Define unit of independence: independent training seed for algorithm comparisons; match seeds are nested repeated measurements, not substitutes for training seeds. Use side-swapped paired matches, same spawn/resource RNG and a held-out opponent pool. Report raw wins/draws/losses, average rank, confidence intervals, and paired effect sizes; do not infer algorithm superiority from overlapping single-run learning curves.
+
+### Scenario scoring
+Feed-to-kill: measure team consumption probability and transferred net mass under intervention. Encirclement: compare joint vs isolated interventions; ensure map boundary is not the true cause. Delayed split: compare H=1 and H=100 net return. Rescue: survival probability and opportunity cost. Zero-shot: unseen teammates, opponents, maps, team sizes and mass distributions.
+
+### Failure taxonomy
+`RULE_BUG, OBS_LEAK, ACTION_INVALID, REWARD_HACK, COLLISION_NONDET, TRAIN_DIVERGENCE, OPPONENT_OVERFIT, CREDIT_UNSTABLE`. Every published failure gets a replay hash, event log and reproduction command. All figures must specify confidence method, denominator, ruleset and checkpoint selection policy.

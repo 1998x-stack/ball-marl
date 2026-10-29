@@ -31,3 +31,13 @@ V1 standard MAPPO; V2 offline counterfactual reports; V3 auxiliary counterfactua
 
 ## Failure modes
 Do not count teammate feeding as new team mass; do not double-count overlapping events; do not simply sum individual differences as a budget-balanced allocation; do not claim do-operator causal identification from an unvalidated simulator; do not use hindsight contributor labels in the Actor.
+
+
+## V2: estimand and estimator registry
+Each method must declare: **intervention unit** (agent command / macro option / policy), **baseline distribution**, **horizon**, **follow-up policy**, **outcome**, **stochastic coupling**, **compute budget**, **bias sources** and **confidence interval**. `D_i^H` is not necessarily additive, nor does it uniquely determine credit for correlated teammates.
+
+### Efficient sampling
+Trigger counterfactual branches only on registered candidate events plus a stratified sample of non-events to avoid selection bias. Save one snapshot and fork K matched RNG rollouts per baseline. For pairwise synergy evaluate all four intervention cells under identical scenario conditions; with n teammates exact Shapley over all coalitions scales exponentially, so use sampled permutations and report variance.
+
+### Integration safeguards
+Keep counterfactual targets in an auxiliary critic with stop-gradient into the primary PPO advantage until validated. COMA-style Q needs joint actions and an action-conditional critic, unlike ordinary MAPPO V. In continuous action spaces approximate expectation with action samples and document estimator variance. Validate a synthetic two-agent coordination matrix game with analytically known difference and interaction effects before using the ball simulator.

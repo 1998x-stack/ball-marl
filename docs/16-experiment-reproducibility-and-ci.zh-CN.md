@@ -58,3 +58,7 @@ P2：联盟自博弈、反事实归因、零样本协作评测通过完整统计
 
 ## 8. 里程碑交付
 S00 完整规则与测量计划；S01 引擎与回放；S02 PettingZoo API；S03 脚本基线；S04 MAPPO；S05 联赛；S06 反事实；S07 消融与论文式报告。每阶段输出验收证据与尚未解决的问题，未运行的阶段标记 NOT IMPLEMENTED。
+
+
+## 9. 补充：结果表和 CI 细则
+Match(match_id,mode,ruleset_hash,spawn_seed,policy_hashes,ranks); Step(match_id,tick,agent,obs_hash,world_hash,action,reward); Event(event_id,match_id,tick,actor,target,type,mass_delta)。所有关联用稳定 ID，不用浮点时间戳连接。PR 执行 schema、单元、PettingZoo compliance、黄金回放；nightly 执行性质随机测试、压力与内存；weekly 执行多种子锦标赛、反事实小样本、训练 smoke。统计独立单位是训练 seed，不能把同策略的多局比赛当独立训练。
