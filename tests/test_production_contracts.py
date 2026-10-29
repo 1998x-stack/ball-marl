@@ -158,3 +158,18 @@ def test_full_5v5_train_infer_evaluate_pipeline(tmp_path):
     result = evaluate(tmp_path / 'policy.pt', episodes=2, seed=191, side_swaps=True)
     assert result['seed_clusters'] == 2 and len(result['matches']) == 4
     assert all(x['policy_steps'] == 4 for x in result['matches'])
+
+def test_training_against_frozen_checkpoint_and_rules_guard(tmp_path):
+    base=tmp_path/'base'
+    train(episodes=1,max_steps=4,seed=200,out=base,epochs=1)
+    checkpoint=base/'policy.pt'
+    follower=tmp_path/'frozen'
+    report,_=train(episodes=1,max_steps=4,seed=201,out=follower,epochs=1,
+                   opponent_checkpoint=checkpoint)
+    assert report[0]['batch_size']==8
+    meta=json.loads((follower/'manifest.json').read_text())
+    assert meta['mode']=='frozen_policy'
+    assert meta['opponent_checkpoint_sha256'] is not None
+    with pytest.raises(ValueError,match='ruleset differs'):
+        train(episodes=1,max_steps=5,seed=202,out=tmp_path/'bad',epochs=1,
+              opponent_checkpoint=checkpoint)
