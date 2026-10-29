@@ -27,12 +27,12 @@ def scripted_action(env,player,kind='heuristic',rng=None):
     return safe_action(env,player,direction,0,0)
 
 
-def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3):
-    if episodes < 1 or max_steps < 1 or epochs < 1 or seed < 0:
+def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_team=2):
+    if episodes < 1 or max_steps < 1 or epochs < 1 or seed < 0 or players_per_team < 1:
         raise ValueError('episodes, max_steps and epochs must be >=1 and seed nonnegative')
     torch.manual_seed(seed)
     torch.set_num_threads(1)
-    cfg={'max_policy_steps':int(max_steps)}
+    cfg={'max_policy_steps':int(max_steps),'players_per_team':int(players_per_team)}
     env=BallMARLEnv(rules=rules_from_yaml(**cfg),seed=seed)
     obs,_=env.reset(seed=seed)
     learner=MAPPO(len(obs[env.agents[0]]['features']),len(env.state(0)),gamma=env.rules['discount_gamma'],epochs=epochs)
