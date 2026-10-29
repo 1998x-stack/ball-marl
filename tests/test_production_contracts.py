@@ -148,3 +148,13 @@ def test_snapshot_entity_corruption_rejected():
 def test_one_cluster_cannot_support_bootstrap_interval():
     result=evaluate(None,episodes=1,max_steps=2,seed=1)
     assert result['score_95pct_cluster_bootstrap_ci'] is None
+
+def test_full_5v5_train_infer_evaluate_pipeline(tmp_path):
+    report, agent = train(episodes=1, max_steps=4, seed=307,
+                          out=tmp_path, players_per_team=5, epochs=1)
+    assert report[0]['batch_size'] == 20
+    model, meta = MAPPO.load(tmp_path / 'policy.pt')
+    assert meta['rules']['players_per_team'] == 5
+    result = evaluate(tmp_path / 'policy.pt', episodes=2, seed=191, side_swaps=True)
+    assert result['seed_clusters'] == 2 and len(result['matches']) == 4
+    assert all(x['policy_steps'] == 4 for x in result['matches'])
