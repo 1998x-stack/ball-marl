@@ -4,7 +4,7 @@
 
 ## Verified locally (2026-10-29)
 
-- 49 pytest tests passed; 1 optional official PettingZoo compliance test skipped because Gymnasium/PettingZoo are not installed in the local container.
+- 54 pytest tests passed; 1 optional official PettingZoo compliance test skipped because Gymnasium/PettingZoo are not installed in the local container.
 - Seeded 2v2 MAPPO trained, model saved/loaded, legacy checkpoint migrated via restricted `weights_only=True` loader, inference and side-swapped paired evaluation executed.
 - Six independently seeded *match outcomes* (three seed clusters x two sides): 0 wins by the tiny trained checkpoint. This establishes only pipeline health, not agent competence.
 - 5v5 CPU reference benchmark with tracemalloc: approximately 14.23 policy steps/s and P95 92.03 ms for the measured workload; global mass residual about 3.46e-14. Benchmark metrics are hardware/workload-dependent, not performance SLAs.
@@ -58,3 +58,7 @@ SHA256 detects corruption, **not** cryptographic authenticity. Checkpoints are l
 ## Engineering truthfulness
 
 Do not label this project 'production certified' based on CI green alone. Distinguish (a) deterministic simulation and save/load correctness, (b) statistical algorithm performance and (c) production operations readiness. All three require separate release evidence.
+
+
+### V0.2 collision performance and correctness
+The default reference-engine execution path now uses deterministic spatial hashing; O(N²) all-pairs remains an explicit correctness oracle. On the same local CPU and a five-versus-five workload with 160 pellets and tracemalloc enabled: reference ~3.59 policy steps/sec, grid ~6.69 policy steps/sec, both with the same mass residual. Randomized contact equivalence and paired physical-trajectory tests passed locally. This is a limited measurement, not a throughput SLA or official-game fidelity claim.
