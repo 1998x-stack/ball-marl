@@ -170,3 +170,53 @@ def test_http_room_create_join_and_ws_security(tmp_path,monkeypatch):
         assert replay.status_code==409
         assert client.get('/api/replays/'+created['replay_id']+'/frames',
                           params={'viewer':created['player']}).status_code==404
+
+
+def test_full_length_replay_http_endpoint_and_fog(tmp_path, monkeypatch):
+    """Actual 450-step game from normal room config; no test-only rules mutations."""
+    monkeypatch.setenv('BALL_MARL_REPLAY_DIR', str(tmp_path/'replays'))
+    monkeypatch.setenv('BALL_MARL_CHECKPOINT_DIR', str(tmp_path/'checkpoints'))
+    monkeypatch.setenv('BALL_MARL_LOG_DIR', str(tmp_path/'logs'))
+    with TestClient(app) as client:
+        response=client.post('/api/rooms',json={'mode':'duel','seed':24680})
+        assert response.status_code==201
+        created=response.json()
+        room=app.state.rooms.get(created['room_id'])
+        room.connect(created['token'])
+        while not room.match.finished:
+            room.tick()
+        assert room.match.env.policy_steps==450
+        endpoint=f"/api/replays/{created['replay_id']}/frames"
+        first=client.get(endpoint,params={'viewer':'team_0/player_0','start':0,'limit':10},
+                         headers={'X-Replay-Token':created['replay_token']})
+        assert first.status_code==200,first.text
+        data=first.json()
+        assert data['verified'] and data['total_ticks']==450
+        assert data['frames'][0]['tick']==0 and data['frames'][-1]['tick']==9
+        assert all(frame['score']['red_mass'] is None for frame in data['frames'])
+        last=client.get(endpoint,params={'viewer':'team_1/player_0','start':448,'limit':10},
+                        headers={'X-Replay-Token':created['replay_token']})
+        assert last.status_code==200,last.text
+        frames=last.json()['frames']
+        assert [f['tick'] for f in frames]==[448,449,450]
+        assert frames[-1]['finished'] and frames[-1]['score']['red_mass'] is not None
+        assert last.json()['total_ticks']==450
+
+
+def test_room_prune_caps_and_replay_trailing_rows(tmp_path):
+    m=RoomManager(replay_dir=str(tmp_path/'replay'),checkpoint_dir=str(tmp_path/'bots'),max_rooms=1)
+    room=m.create('duel',5)
+    with pytest.raises(RoomError,match='capacity'):
+        m.create('duel',6)
+    room.last_active-=65
+    m.prune()
+    assert not m.rooms
+    second=m.create('duel',7)
+    second.connect(second.owner_token)
+    second.tick()
+    second.recorder.close('test')
+    with second.recorder.path.open('a',encoding='utf8') as f:
+        f.write('{"kind":"end","reason":"extra"}\n')
+    with pytest.raises(ReplayIntegrityError,match='after end'):
+        m.replays.read(second.recorder.id)
+    m.close()
