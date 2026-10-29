@@ -52,3 +52,28 @@ The version identifiers and evidence statuses in `specifications/` are **PROPOSE
 - `runs/demo/eval/match_000.json` — event trace + state hashes.
 
 **Research honesty:** an agent trained for 5–40 episodes generally performs worse than hand-coded pellet collection. Report that baseline rather than treating a successful training loop as policy quality.
+
+## Engineering V0.2 hardening — production readiness is NOT claimed
+
+This research prototype now includes strict rule validation and SHA256 ruleset fingerprints, arena-relative spawn layouts, deterministic geometric collision precedence, incremental event hash chains, corruption-rejecting checkpoints, non-overwriting seeded training, per-match independent RNG, side-swapped paired evaluation, and 5v5 CPU reference benchmarking.
+
+```bash
+python -m pytest -q
+python -m scripts.release_gate --out runs/gate-001
+python -m training.cli benchmark --players-per-team 5 --episodes 3 --steps 50
+python -m training.cli evaluate --checkpoint runs/demo/policy.pt --episodes 20 --side-swaps
+```
+
+Historical V0.1 checkpoints lack checksum sidecars and are rejected by default. Migrate only a **trusted** legacy checkpoint explicitly:
+
+```bash
+python -m training.cli migrate-checkpoint --source OLD.pt --target NEW.pt
+```
+
+A SHA256 sidecar is a corruption detector, not a publisher signature. Checkpoints use restricted PyTorch `weights_only=True` loading. Current local tests: **54 passed, 1 skipped (official optional PettingZoo dependencies absent locally)**. Hosted CI must independently confirm its results. The model is not yet competitively strong; implementation does not claim commercial-game rules parity.
+
+See [production-readiness and blockers](docs/PRODUCTION_READINESS.md).
+
+
+### V0.2 collision performance and correctness
+The default reference-engine execution path now uses deterministic spatial hashing; O(N²) all-pairs remains an explicit correctness oracle. On the same local CPU and a five-versus-five workload with 160 pellets and tracemalloc enabled: reference ~3.59 policy steps/sec, grid ~6.69 policy steps/sec, both with the same mass residual. Randomized contact equivalence and paired physical-trajectory tests passed locally. This is a limited measurement, not a throughput SLA or official-game fidelity claim.
