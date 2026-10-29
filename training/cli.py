@@ -18,6 +18,7 @@ def main(argv=None):
     t.add_argument('--steps',type=int,default=40);t.add_argument('--seed',type=int,default=42)
     t.add_argument('--out',default='runs/smoke')
     t.add_argument('--players-per-team',type=int,default=2)
+    t.add_argument('--opponent-checkpoint')
     e=sub.add_parser('evaluate');e.add_argument('--checkpoint');e.add_argument('--episodes',type=int,default=5)
     e.add_argument('--seed',type=int,default=1000);e.add_argument('--steps',type=int)
     e.add_argument('--trace-dir')
@@ -32,7 +33,8 @@ def main(argv=None):
     args=parser.parse_args(argv)
     if args.command=='train':
         report,_=train(episodes=args.episodes,max_steps=args.steps,out=args.out,seed=args.seed,
-                       players_per_team=args.players_per_team)
+                       players_per_team=args.players_per_team,
+                       opponent_checkpoint=args.opponent_checkpoint)
         print(json.dumps(report[-1],indent=2))
     elif args.command=='evaluate':
         print(json.dumps(evaluate(args.checkpoint,episodes=args.episodes,max_steps=args.steps,
