@@ -1,0 +1,20 @@
+name: core-pipeline
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -e '.[test]'
+      - run: python -m pytest -q
+      - run: python -m training.cli train --episodes 1 --steps 8 --seed 123 --out runs/ci
+      - run: python -m training.cli infer --checkpoint runs/ci/policy.pt
+      - run: python -m training.cli evaluate --checkpoint runs/ci/policy.pt --episodes 2 --seed 1234
+      - run: python -m training.cli credit --seed 1234

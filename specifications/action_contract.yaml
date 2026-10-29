@@ -1,0 +1,7 @@
+version: hybrid-v0.1
+move: 'Box(-1,1,shape=(2,))'
+split: 'Discrete(2)'
+eject: 'Discrete(2)'
+split_trigger: once_per_policy_tick
+eject_trigger: once_per_policy_tick
+invalid_action: reject_in_strict_mode
