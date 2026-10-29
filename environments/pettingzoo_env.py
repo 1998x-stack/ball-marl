@@ -8,9 +8,14 @@ from rewards.objective import reward_components
 
 
 class BallMARLEnv(ParallelEnv):
-    metadata = {'name':'ball_marl_research_v0', 'render_modes': []}
-    def __init__(self, rules=None, seed=0):
-        self.rules=dict(rules or rules_from_yaml())
+    metadata = {'name':'ball_marl_research_v0', 'render_modes': ['rgb_array']}
+    def __init__(self, rules=None, seed=0, render_mode=None, strict_action_masks=False):
+        from engine.rules import validate_rules
+        self.rules=validate_rules(rules if rules is not None else rules_from_yaml())
+        if render_mode not in (None, 'rgb_array'):
+            raise ValueError('render_mode must be None or rgb_array')
+        self.render_mode=render_mode
+        self.strict_action_masks=bool(strict_action_masks)
         self.world=World(self.rules)
         self.possible_agents=self.world.players.copy()
         self.agents=[]
@@ -49,15 +54,32 @@ class BallMARLEnv(ParallelEnv):
             raise RuntimeError('step called after episode ended; reset required')
         if set(actions) != set(self.agents):
             raise ValueError('joint actions must match current agents')
-        for p,a in actions.items():
+        # Valid Gymnasium-space actions can still be game-illegal button presses.
+        # Mask them to audited no-ops by default, strict mode raises.
+        executed = {}
+        invalid = {}
+        for p in self.agents:
+            a = actions[p]
             if not self.action_space(p).contains(a):
                 raise ValueError(f'invalid action: {p}')
-            masks=self.world.action_masks(p)
-            if a['split'] and not masks['split'][1]: raise ValueError(f'illegal split: {p}')
-            if a['eject'] and not masks['eject'][1]: raise ValueError(f'illegal eject: {p}')
+            masks = self.world.action_masks(p)
+            rejected = []
+            split = int(a['split'])
+            eject = int(a['eject'])
+            if split and not masks['split'][1]:
+                rejected.append('split')
+                split = 0
+            if eject and not masks['eject'][1]:
+                rejected.append('eject')
+                eject = 0
+            if rejected and self.strict_action_masks:
+                raise ValueError(f'illegal actions for {p}: {rejected}')
+            invalid[p] = rejected
+            executed[p] = {'move': np.asarray(a['move'], dtype=np.float32).copy(),
+                           'split': split, 'eject': eject}
         pre={t:self.world.team_mass(t) for t in (0,1)}
         event_count=len(self.world.events)
-        self.world.step(actions)
+        self.world.step(executed)
         self.policy_steps+=1
         terminated=self.policy_steps>=self.rules['max_policy_steps']
         post={t:self.world.team_mass(t) for t in (0,1)}
@@ -69,10 +91,35 @@ class BallMARLEnv(ParallelEnv):
         truncations={p:False for p in current}
         infos={p:{'reward_components':components[int(p.split('/')[0].split('_')[1])],
                   'mass_by_team':post.copy(),'events':self.world.events[event_count:],
-                  'state_hash':self.world.digest()} for p in current}
+                  'state_hash':self.world.digest(),
+                  'invalid_actions':invalid[p],
+                  'executed_action':executed[p]} for p in current}
         if terminated:
             self.agents=[]
         self.last_info=infos
         return obs,rewards,terminations,truncations,infos
 
-    def close(self): pass
+    def render(self):
+        if self.render_mode != 'rgb_array':
+            return None
+        height, width = 256, 256
+        img = np.full((height, width, 3), 242, dtype=np.uint8)
+        for b in sorted(self.world.balls, key=lambda x: x.id):
+            if b.owner == 'pellet':
+                color = (130, 170, 110)
+            elif b.owner.startswith('team_0/'):
+                color = (55, 110, 218)
+            else:
+                color = (224, 84, 77)
+            px = int(np.clip(b.x / self.rules['width'] * (width-1), 0, width-1))
+            py = int(np.clip(b.y / self.rules['height'] * (height-1), 0, height-1))
+            radius = max(1, int(b.radius / self.rules['width'] * width))
+            ys, xs = np.ogrid[max(0,py-radius):min(height,py+radius+1),
+                              max(0,px-radius):min(width,px+radius+1)]
+            patch = img[max(0,py-radius):min(height,py+radius+1),
+                        max(0,px-radius):min(width,px+radius+1)]
+            patch[(xs-px)**2+(ys-py)**2 <= radius**2] = color
+        return img
+
+    def close(self):
+        return None
