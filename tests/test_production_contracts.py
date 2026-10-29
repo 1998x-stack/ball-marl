@@ -173,3 +173,12 @@ def test_training_against_frozen_checkpoint_and_rules_guard(tmp_path):
     with pytest.raises(ValueError,match='ruleset differs'):
         train(episodes=1,max_steps=5,seed=202,out=tmp_path/'bad',epochs=1,
               opponent_checkpoint=checkpoint)
+
+def test_pettingzoo_reset_accepts_advisory_options_and_audits_them():
+    env=BallMARLEnv()
+    obs,infos=env.reset(seed=0,options={'options':1})
+    assert all(infos[p]['ignored_reset_options']==['options'] for p in env.agents)
+    with pytest.raises(NotImplementedError,match='not implemented'):
+        env.reset(options={'scenario_id':'not-supported-yet'})
+    with pytest.raises(ValueError,match='must be a dict'):
+        env.reset(options='bad')
