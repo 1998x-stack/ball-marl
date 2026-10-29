@@ -39,15 +39,23 @@ class BallMARLEnv(ParallelEnv):
                 'eject_mask':masks['eject'].astype(np.int8)}
 
     def reset(self,seed=None,options=None):
-        options=options or {}
-        if options:
-            raise ValueError('initial overrides not yet supported in research-v0')
+        # PettingZoo allows advisory reset options. They are inert metadata,
+        # not implicit overrides of physics or gameplay rules.
+        if options is None:
+            options={}
+        if not isinstance(options,dict):
+            raise ValueError('reset options must be a dict or None')
+        unsupported=set(options) & {'ruleset','scenario_id','initial_world'}
+        if unsupported:
+            raise NotImplementedError(f'gameplay reset overrides not implemented: {sorted(unsupported)}')
+        ignored_options=sorted(options)
         self.world.reset(seed if seed is not None else self.world.seed)
         self.agents=self.possible_agents.copy()
         self.policy_steps=0
         self.last_info={}
         obs={p:self.observe(p) for p in self.agents}
-        infos={p:{'state_hash':self.world.digest(), 'ruleset':self.rules['version']} for p in self.agents}
+        infos={p:{'state_hash':self.world.digest(), 'ruleset':self.rules['version'],
+                  'ignored_reset_options':ignored_options} for p in self.agents}
         return obs,infos
 
     def step(self,actions):
