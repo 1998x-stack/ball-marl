@@ -11,12 +11,12 @@ from engine.rules import rules_from_yaml, rules_digest
 from environments.pettingzoo_env import BallMARLEnv
 
 def run_benchmark(*, players_per_team=5, episodes=4, steps=40,
-                  pellet_count=32, seed=2026):
+                  pellet_count=32, seed=2026, collision_backend='grid'):
     if min(players_per_team,episodes,steps)<1 or pellet_count<0 or seed<0:
         raise ValueError('invalid benchmark dimensions')
     rules=rules_from_yaml(players_per_team=int(players_per_team),
                           max_policy_steps=int(steps),pellet_count=int(pellet_count))
-    env=BallMARLEnv(rules)
+    env=BallMARLEnv(rules,collision_backend=collision_backend)
     latencies=[]
     max_residual=0.
     total_steps=0
@@ -55,7 +55,7 @@ def run_benchmark(*, players_per_team=5, episodes=4, steps=40,
             'step_latency_ms_p95':float(np.quantile(latencies,.95)),
             'peak_python_tracemalloc_bytes':peak,
             'max_global_mass_residual':max_residual,
-            'events_observed':event_count,'backend':'reference_cpu_all_pairs',
+            'events_observed':event_count,'backend':collision_backend,
             'note':'Host-specific benchmark; no cross-device throughput claim.'}
 
 def main(argv=None):
@@ -65,8 +65,10 @@ def main(argv=None):
     parser.add_argument('--steps',type=int,default=40)
     parser.add_argument('--pellets',type=int,default=32)
     parser.add_argument('--seed',type=int,default=2026)
+    parser.add_argument('--collision-backend',choices=['grid','reference'],default='grid')
     args=parser.parse_args(argv)
     print(json.dumps(run_benchmark(players_per_team=args.players_per_team,
                                    episodes=args.episodes,steps=args.steps,
-                                   pellet_count=args.pellets,seed=args.seed),indent=2))
+                                   pellet_count=args.pellets,seed=args.seed,
+                                   collision_backend=args.collision_backend),indent=2))
 if __name__=='__main__': main()
