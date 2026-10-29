@@ -44,3 +44,7 @@ ball-marl/
 
 ## Milestone acceptance evidence
 For each milestone require source commit, exact CLI command, CI result, sample replay, metrics JSON, known limitations and sign-off. **Documentation completion does not imply these stages were implemented.**
+
+
+## V2 delivery dependencies
+Rules registry → deterministic physics → event/mass ledger → replay → PettingZoo → scripted baselines → MAPPO → league → credit attribution → tournament. Each gate requires reproducible command, commit SHA, test report and open-issues register. CI tiers: PR unit/compliance/golden replays; nightly property and stress; weekly multi-seed tournaments. No implementation stage is considered complete from documentation alone.
