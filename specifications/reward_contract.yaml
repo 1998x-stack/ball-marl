@@ -1,0 +1,4 @@
+version: rank-pbrs-v0.1
+objective: terminal_winner_plus_one_loser_minus_one
+potential: 'log1p(team_active_mass)'
+terminal_potential: 0.0
