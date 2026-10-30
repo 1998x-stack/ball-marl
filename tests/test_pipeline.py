@@ -26,6 +26,38 @@ def test_logprob_roundtrip_finite():
     assert new_lp.item()==pytest.approx(old_logp,abs=1e-5)
 
 
+def test_batched_deterministic_actions_match_individual_inference():
+    env = BallMARLEnv()
+    observations, _ = env.reset(seed=17)
+    model = MAPPO(len(observations[env.agents[0]]['features']), len(env.state(0)))
+
+    batched = model.choose_many(observations, deterministic=True)
+
+    assert set(batched) == set(env.agents)
+    for player, observation in observations.items():
+        individual_action, individual_logp = model.choose(observation, deterministic=True)
+        batched_action, batched_logp = batched[player]
+        np.testing.assert_allclose(batched_action['move'], individual_action['move'], atol=1e-6)
+        assert batched_action['split'] == individual_action['split']
+        assert batched_action['eject'] == individual_action['eject']
+        assert batched_logp == pytest.approx(individual_logp, abs=1e-5)
+
+
+def test_new_policy_prefers_no_eject_when_action_is_legal():
+    env = BallMARLEnv()
+    observations, _ = env.reset(seed=23)
+    observation = observations[env.agents[0]]
+    model = MAPPO(len(observation['features']), len(env.state(0)))
+    features = torch.as_tensor(observation['features']).unsqueeze(0)
+    split_mask = torch.as_tensor(observation['split_mask'].astype(bool)).unsqueeze(0)
+    eject_mask = torch.as_tensor(observation['eject_mask'].astype(bool)).unsqueeze(0)
+
+    _, _, eject_distribution = model.actor.distribution(features, split_mask, eject_mask)
+
+    assert eject_mask[0, 1]
+    assert eject_distribution.probs[0, 1].item() < 0.05
+
+
 def test_train_infer_evaluate_and_register(tmp_path):
     report,model=train(episodes=2,max_steps=8,out=tmp_path,seed=101,epochs=2)
     assert len(report)==2
@@ -45,6 +77,7 @@ def test_train_infer_evaluate_and_register(tmp_path):
     assert len(pool)==1
     assert len(register(tmp_path/'pool.json',saved,'smoke'))==1
     assert json.loads((tmp_path/'manifest.json').read_text())['mode']=='scripted_opponent'
+    assert meta['initial_eject_logits'] == [2.0, -2.0]
 
 
 def test_counterfactual_snapshot_unchanged():

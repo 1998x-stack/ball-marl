@@ -16,6 +16,24 @@ def test_observation_and_action_spaces():
     env.step(acts)
 
 
+def test_joint_step_computes_one_shared_state_hash(monkeypatch):
+    env = BallMARLEnv(rules_from_yaml(players_per_team=5, pellet_count=0))
+    original_digest = env.world.digest
+    calls = 0
+
+    def counted_digest():
+        nonlocal calls
+        calls += 1
+        return original_digest()
+
+    monkeypatch.setattr(env.world, 'digest', counted_digest)
+    actions = {player: scripted_action(env, player) for player in env.agents}
+    _, _, _, _, infos = env.step(actions)
+
+    assert calls == 1
+    assert {info['state_hash'] for info in infos.values()} == {original_digest()}
+
+
 def test_actor_does_not_observe_hidden_enemy():
     env=BallMARLEnv(rules_from_yaml(pellet_count=0))
     env.reset(seed=9)

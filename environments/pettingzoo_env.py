@@ -54,7 +54,8 @@ class BallMARLEnv(ParallelEnv):
         self.policy_steps=0
         self.last_info={}
         obs={p:self.observe(p) for p in self.agents}
-        infos={p:{'state_hash':self.world.digest(), 'ruleset':self.rules['version'],
+        state_hash=self.world.digest()
+        infos={p:{'state_hash':state_hash, 'ruleset':self.rules['version'],
                   'ignored_reset_options':ignored_options} for p in self.agents}
         return obs,infos
 
@@ -98,9 +99,10 @@ class BallMARLEnv(ParallelEnv):
         rewards={p:components[int(p.split('/')[0].split('_')[1])]['total'] for p in current}
         terminations={p:terminated for p in current}
         truncations={p:False for p in current}
+        state_hash=self.world.digest()
         infos={p:{'reward_components':components[int(p.split('/')[0].split('_')[1])],
                   'mass_by_team':post.copy(),'events':self.world.events[event_count:],
-                  'state_hash':self.world.digest(),
+                  'state_hash':state_hash,
                   'invalid_actions':invalid[p],
                   'executed_action':executed[p]} for p in current}
         if terminated:

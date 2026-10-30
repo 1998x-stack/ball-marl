@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import numpy as np
 import torch
-from algorithms.mappo import MAPPO
+from algorithms.mappo import EJECT_INITIAL_LOGITS, MAPPO
 from environments.pettingzoo_env import BallMARLEnv
 from actions.masks import safe_action
 from engine.rules import rules_digest, rules_from_yaml
@@ -59,22 +59,31 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_
         rng=np.random.default_rng(np.random.SeedSequence([seed,ep,999]))
         traces={p:[] for p in env.possible_agents if p.startswith('team_0/')}
         terminal_info=None
+        eject_actions=0
+        split_actions=0
         while env.agents and (rollout_steps is None or env.policy_steps < rollout_steps):
             global_state=env.state(0)
             with torch.no_grad():
                 current_value=float(learner.critic(torch.tensor(global_state,dtype=torch.float32).unsqueeze(0)).item())
             joint={}
             logps={}
+            trained_actions=learner.choose_many({p:obs[p] for p in env.agents
+                                                 if p.startswith('team_0/')})
+            frozen_actions=(frozen_opponent.choose_many(
+                {p:obs[p] for p in env.agents if p.startswith('team_1/')}, deterministic=True)
+                if frozen_opponent is not None else {})
             for p in env.agents:
                 if p.startswith('team_0/'):
-                    joint[p],logps[p]=learner.choose(obs[p])
+                    joint[p],logps[p]=trained_actions[p]
                 elif frozen_opponent is not None:
-                    joint[p],_=frozen_opponent.choose(obs[p],deterministic=True)
+                    joint[p],_=frozen_actions[p]
                 else:
                     joint[p]=scripted_action(env,p,rng=rng)
             old_obs=obs
             obs,rewards,terminations,truncations,infos=env.step(joint)
             terminal_info=infos
+            eject_actions+=sum(infos[p]['executed_action']['eject'] for p in traces)
+            split_actions+=sum(infos[p]['executed_action']['split'] for p in traces)
             done=all(terminations.values())
             next_state=env.state(0)
             with torch.no_grad():
@@ -89,7 +98,9 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_
         metrics=learner.update(list(traces.values()))
         m=terminal_info[env.possible_agents[0]]['mass_by_team']
         result={'episode':ep,'seed':seed+ep,'team_mass':m,'rank_reward':np.sign(m[0]-m[1]).item(),
-                'policy_steps':env.policy_steps,**metrics}
+                'policy_steps':env.policy_steps,'team_eject_actions':eject_actions,
+                'team_split_actions':split_actions,'external_mass_out':env.world.external_out,
+                **metrics}
         summary.append(result)
         with (output/'train.jsonl').open('a',encoding='utf-8') as f:
             f.write(json.dumps(result,ensure_ascii=False)+'\n')
@@ -98,6 +109,7 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_
               'observation_dim':len(obs[env.possible_agents[0]]['features']),
               'critic_state_dim':len(env.state(0)),
               'training_algorithm':'shared_actor_central_critic_ppo',
+               'initial_eject_logits':list(EJECT_INITIAL_LOGITS),
               'engine_collision_backend':env.world.collision_backend,
               'torch_version':str(torch.__version__), 'numpy_version':np.__version__,
               'mode':'frozen_policy' if frozen_opponent is not None else 'scripted_opponent',

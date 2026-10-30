@@ -4,12 +4,27 @@ Scope: train one team against frozen scripted opponents. It is a real PPO update
 not a claim of competitively strong or multi-population self-play.
 """
 from __future__ import annotations
+from collections.abc import Mapping
+from typing import TypedDict
 import numpy as np
 import torch
 from torch import nn
 from torch.distributions import Normal, Categorical
 
 LOG_TWO = 0.6931471805599453
+EJECT_INITIAL_LOGITS = (2.0, -2.0)
+
+
+class Observation(TypedDict):
+    features: np.ndarray
+    split_mask: np.ndarray
+    eject_mask: np.ndarray
+
+
+class Action(TypedDict):
+    move: np.ndarray
+    split: int
+    eject: int
 
 
 class SharedActor(nn.Module):
@@ -20,6 +35,9 @@ class SharedActor(nn.Module):
         self.log_std=nn.Parameter(torch.full((2,),-.5))
         self.split=nn.Linear(hidden,2)
         self.eject=nn.Linear(hidden,2)
+        nn.init.zeros_(self.eject.weight)
+        with torch.no_grad():
+            self.eject.bias.copy_(torch.tensor(EJECT_INITIAL_LOGITS))
 
     def distribution(self, obs, split_mask, eject_mask):
         h=self.body(obs)
@@ -72,6 +90,27 @@ class MAPPO:
         action={'move':m[0].cpu().numpy().astype(np.float32),
                 'split':int(s.item()),'eject':int(e.item())}
         return action,float(lp.item())
+
+    @torch.no_grad()
+    def choose_many(self, observations: Mapping[str, Observation],
+                    deterministic: bool = False) -> dict[str, tuple[Action, float]]:
+        players = list(observations)
+        if not players:
+            return {}
+        features = torch.as_tensor(np.stack([observations[p]['features'] for p in players]),
+                                   dtype=torch.float32, device=self.device)
+        split_masks = torch.as_tensor(np.stack([observations[p]['split_mask'] for p in players]),
+                                      dtype=torch.bool, device=self.device)
+        eject_masks = torch.as_tensor(np.stack([observations[p]['eject_mask'] for p in players]),
+                                      dtype=torch.bool, device=self.device)
+        moves, splits, ejects, logps = self.actor.act(
+            features, split_masks, eject_masks, deterministic=deterministic)
+        return {
+            player: ({'move': moves[i].cpu().numpy().astype(np.float32),
+                      'split': int(splits[i].item()), 'eject': int(ejects[i].item())},
+                     float(logps[i].item()))
+            for i, player in enumerate(players)
+        }
 
     def update(self,records):
         if not records:
