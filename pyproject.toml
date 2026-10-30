@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "ball-marl"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reproducible ball-consumption multi-agent reinforcement learning research sandbox"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "torch>=2.1", "PyYAML>=6"]
@@ -15,6 +15,7 @@ game-test = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "loguru>=0.7", "httpx>
 [project.scripts]
 ball-marl = "training.cli:main"
 ball-marl-play = "game_server.cli:main"
+ball-marl-train-bot = "game_server.train_bot:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["engine*", "environments*", "observations*", "actions*", "rewards*", "algorithms*", "credit_assignment*", "league*", "evaluation*", "training*", "game_server*", "specifications*"]

@@ -15,6 +15,8 @@ def scripted_action(env,player,kind='heuristic',rng=None):
     if rng is None:
         rng=np.random.default_rng(0)
     center=env.world.centroid(player)
+    # Scripted competitors follow the same local visibility rule as the actor.
+    # Prior implementation searched the entire world, unfairly granting oracle vision.
     view=env.rules['view_radius']
     candidates=[b for b in env.world.balls if b.owner=='pellet'
                 and np.linalg.norm(np.array([b.x,b.y])-center) <= view]
@@ -28,18 +30,20 @@ def scripted_action(env,player,kind='heuristic',rng=None):
 
 
 def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_team=2,
-          opponent_checkpoint=None):
+          opponent_checkpoint=None, preset_rules=None, rollout_steps=None):
     if episodes < 1 or max_steps < 1 or epochs < 1 or seed < 0 or players_per_team < 1:
         raise ValueError('episodes, max_steps and epochs must be >=1 and seed nonnegative')
     torch.manual_seed(seed)
     torch.set_num_threads(1)
     cfg={'max_policy_steps':int(max_steps),'players_per_team':int(players_per_team)}
-    env=BallMARLEnv(rules=rules_from_yaml(**cfg),seed=seed)
+    if rollout_steps is not None and (type(rollout_steps) is not int or rollout_steps < 1):
+        raise ValueError('rollout_steps must be positive integer')
+    env=BallMARLEnv(rules=preset_rules if preset_rules is not None else rules_from_yaml(**cfg),seed=seed)
     obs,_=env.reset(seed=seed)
     learner=MAPPO(len(obs[env.agents[0]]['features']),len(env.state(0)),gamma=env.rules['discount_gamma'],epochs=epochs)
     frozen_opponent=None
     if opponent_checkpoint is not None:
-        frozen_opponent,opponent_meta=MAPPO.load(opponent_checkpoint)
+        frozen_opponent, opponent_meta=MAPPO.load(opponent_checkpoint)
         if opponent_meta.get('rules_hash') != rules_digest(env.rules):
             raise ValueError('frozen opponent ruleset differs from training ruleset')
         if frozen_opponent.actor.body[0].in_features != len(obs[env.agents[0]]['features']):
@@ -55,7 +59,7 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_
         rng=np.random.default_rng(np.random.SeedSequence([seed,ep,999]))
         traces={p:[] for p in env.possible_agents if p.startswith('team_0/')}
         terminal_info=None
-        while env.agents:
+        while env.agents and (rollout_steps is None or env.policy_steps < rollout_steps):
             global_state=env.state(0)
             with torch.no_grad():
                 current_value=float(learner.critic(torch.tensor(global_state,dtype=torch.float32).unsqueeze(0)).item())
@@ -97,6 +101,7 @@ def train(episodes=5,max_steps=40,out='runs/smoke',seed=42,epochs=3,players_per_
               'engine_collision_backend':env.world.collision_backend,
               'torch_version':str(torch.__version__), 'numpy_version':np.__version__,
               'mode':'frozen_policy' if frozen_opponent is not None else 'scripted_opponent',
+              'rollout_steps':rollout_steps, 'preset_rules':preset_rules is not None,
               'opponent_checkpoint_sha256':sha256_file(opponent_checkpoint) if frozen_opponent is not None else None,
               'note':'Proof-of-pipeline only, not verified commercial mechanics.'}
     learner.save(output/'policy.pt',metadata)

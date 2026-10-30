@@ -14,12 +14,14 @@ from pathlib import Path
 import time
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, Query, Body
 from fastapi.responses import FileResponse
 from loguru import logger
 from starlette.websockets import WebSocketState
 
 from game_server.session import GameSession, InputError, MAX_CLIENT_MESSAGE_BYTES, MODES, POLICY_HZ
+from game_server.rooms import RoomManager, RoomError, Room
+from game_server.replay import ReplayIntegrityError
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 MAX_SESSIONS = 16
@@ -39,16 +41,20 @@ def configure_logging(log_dir: str | Path | None = None) -> int:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     sink_id = configure_logging()
+    app.state.rooms = RoomManager(
+        replay_dir=os.getenv('BALL_MARL_REPLAY_DIR', 'runs/web/replays'),
+        checkpoint_dir=os.getenv('BALL_MARL_CHECKPOINT_DIR', 'runs/web/checkpoints'))
     logger.info('game_server_started')
     try:
         yield
     finally:
+        app.state.rooms.close()
         logger.info('game_server_stopped')
         await logger.complete()
         logger.remove(sink_id)
 
 
-app = FastAPI(title='Ball-MARL Arcade', version='0.3.0', docs_url=None,
+app = FastAPI(title='Ball-MARL Arcade', version='0.4.0', docs_url=None,
               redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.state.connections = set()
 
@@ -73,15 +79,215 @@ async def styles():
 @app.get('/api/health')
 async def health():
     return {'status': 'ok', 'service': 'ball-marl-arcade', 'protocol': 1,
-            'active_sessions': len(app.state.connections)}
+            'active_sessions': len(app.state.connections),
+            'rooms': len(app.state.rooms.rooms)}
 
 
 @app.get('/api/modes')
 async def modes():
     return {'modes': [{'id': key, 'players_per_team': value} for key, value in MODES.items()],
-            'policy_hz': POLICY_HZ, 'max_sessions': MAX_SESSIONS,
+            'policy_hz': POLICY_HZ, 'max_sessions': MAX_SESSIONS, 'max_rooms': 16,
             'disclaimer': 'Research simulator, not official game mechanics.'}
 
+
+
+
+@app.get('/api/bots')
+async def bots():
+    return {'available': ['scripted'] + app.state.rooms.registry.list_ids(),
+            'warning': 'Only operator-installed and ruleset-compatible checkpoints can run.'}
+
+
+@app.post('/api/rooms', status_code=201)
+async def create_room(payload: dict[str, Any] = Body(...)):
+    if set(payload) - {'mode', 'seed', 'bot'}:
+        raise HTTPException(422, 'unsupported room options')
+    mode = payload.get('mode', 'squad')
+    seed = payload.get('seed')
+    bot = payload.get('bot', 'scripted')
+    if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
+        raise HTTPException(422, 'seed must be uint32')
+    if not isinstance(mode, str) or mode not in MODES or not isinstance(bot, str):
+        raise HTTPException(422, 'invalid mode or bot')
+    try:
+        room = app.state.rooms.create(mode, seed, bot_id=None if bot == 'scripted' else bot)
+    except RoomError as error:
+        raise HTTPException(429, str(error)) from error
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(422, str(error)) from error
+    return {**room.public(), 'token': room.owner_token, 'player': room.seat(room.owner_token).player,
+            'replay_token': room.recorder.token, 'replay_id': room.recorder.id}
+
+
+@app.get('/api/rooms/{room_id}')
+async def get_room(room_id: str):
+    try:
+        return app.state.rooms.get(room_id).public()
+    except KeyError as error:
+        raise HTTPException(404, 'room not found') from error
+
+
+@app.post('/api/rooms/{room_id}/join')
+async def join_room(room_id: str, payload: dict[str, Any] = Body(default={})):
+    if set(payload) - {'team'}:
+        raise HTTPException(422, 'unsupported join options')
+    team = payload.get('team')
+    try:
+        room = app.state.rooms.get(room_id)
+        token = room.join(team)
+    except KeyError as error:
+        raise HTTPException(404, 'room not found') from error
+    except RoomError as error:
+        raise HTTPException(409, str(error)) from error
+    return {**room.public(), 'token': token, 'player': room.seat(token).player,
+            'replay_token': room.recorder.token, 'replay_id': room.recorder.id}
+
+
+@app.get('/api/replays/{replay_id}/frames')
+async def replay_frames(replay_id: str, viewer: str, start: int = Query(0, ge=0, le=1000),
+                        limit: int = Query(100, ge=1, le=100),
+                        replay_token: str | None = Header(None, alias='X-Replay-Token')):
+    store = app.state.rooms.replays
+    try:
+        store.authorize(replay_id, replay_token or '')
+        # A live journal must never expose a privileged reconstructed view.
+        from pathlib import Path
+        file = store.directory / f'{replay_id}.jsonl'
+        with file.open('rb') as handle:
+            last_line = list(handle)[-1]
+        if json.loads(last_line).get('kind') != 'end':
+            raise HTTPException(409, 'replay not finalized')
+        return store.frames(replay_id, viewer, start=start, limit=limit)
+    except (PermissionError, FileNotFoundError) as error:
+        raise HTTPException(404, 'replay not found') from error
+    except (ValueError, ReplayIntegrityError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
+async def _room_ticker(room: Room) -> None:
+    target = time.monotonic()
+    try:
+        while room.subscribers and not room.completed:
+            target += 1 / POLICY_HZ
+            await asyncio.sleep(max(0, target - time.monotonic()))
+            if not room.subscribers:
+                break
+            if not room.match.finished and not room.match.paused:
+                start = time.monotonic()
+                room.tick()
+                elapsed = time.monotonic() - start
+                if elapsed > 1 / POLICY_HZ:
+                    logger.bind(room_id=room.id, step_ms=round(elapsed * 1000, 1)).warning('slow_room_tick')
+                    target = time.monotonic()
+            for token, send in list(room.subscribers.items()):
+                try:
+                    await asyncio.wait_for(send(room.frame(token)), timeout=0.5)
+                except (WebSocketDisconnect, RuntimeError, OSError, asyncio.TimeoutError):
+                    room.subscribers.pop(token, None)
+                    room.disconnect(token)
+            if room.match.finished:
+                break
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.bind(room_id=room.id).exception('room_ticker_failed')
+    finally:
+        room.task = None
+
+
+@app.websocket('/ws/rooms/{room_id}')
+async def room_play(websocket: WebSocket, room_id: str):
+    if not _valid_origin(websocket):
+        await websocket.close(code=1008, reason='origin mismatch')
+        return
+    if websocket.query_params.get('token') is not None:
+        # Capabilities in URLs are leaked by Uvicorn/proxy access logs.
+        await websocket.close(code=1008, reason='credentials in URL forbidden')
+        return
+    try:
+        room = app.state.rooms.get(room_id)
+    except KeyError:
+        await websocket.close(code=1008, reason='invalid room')
+        return
+    await websocket.accept()
+    try:
+        # Authenticate within an encrypted WS frame (not URL or HTTP headers).
+        # Do not log this message or echo the bearer token on failures.
+        first = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+        if len(first.encode('utf-8')) > MAX_CLIENT_MESSAGE_BYTES:
+            raise InputError('authentication message too large')
+        auth = json.loads(first)
+        if not isinstance(auth, dict) or set(auth) != {'type', 'token'} or auth['type'] != 'auth':
+            raise InputError('authentication required')
+        token = auth['token']
+        room.seat(token)
+        if token in room.subscribers:
+            raise RoomError('seat is already connected')
+        room.connect(token)
+    except (asyncio.TimeoutError, ValueError, TypeError, PermissionError, RoomError, WebSocketDisconnect):
+        await websocket.close(code=1008, reason='authentication failed')
+        return
+    send_lock = asyncio.Lock()
+
+    async def emit(payload):
+        async with send_lock:
+            await websocket.send_json(payload)
+
+    room.subscribers[token] = emit
+    await emit(room.frame(token))
+    if room.task is None and not room.match.finished:
+        room.task = asyncio.create_task(_room_ticker(room))
+    recent_inputs = []
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if len(message.encode('utf-8')) > MAX_CLIENT_MESSAGE_BYTES:
+                await websocket.close(code=1009, reason='message too large')
+                break
+            try:
+                raw = json.loads(message, parse_constant=lambda _: (_ for _ in ()).throw(InputError('nonfinite JSON')))
+                if not isinstance(raw, dict) or not isinstance(raw.get('type'), str):
+                    raise InputError('message must be an object with type')
+                kind = raw['type']
+                if kind == 'input':
+                    now = time.monotonic()
+                    recent_inputs = [t for t in recent_inputs if now-t < 1]
+                    if len(recent_inputs) >= 60:
+                        continue
+                    recent_inputs.append(now)
+                    room.input(token, raw)
+                elif kind == 'pause':
+                    if set(raw) != {'type'}:
+                        raise InputError('invalid pause message')
+                    room.set_paused(token)
+                    await emit(room.frame(token))
+                elif kind == 'restart':
+                    if set(raw) - {'type', 'new_seed'} or type(raw.get('new_seed', False)) is not bool:
+                        raise InputError('invalid restart message')
+                    room.restart(token, new_seed=raw.get('new_seed', False))
+                    for other_token, send in list(room.subscribers.items()):
+                        await send(room.frame(other_token))
+                    if room.task is None or room.task.done():
+                        room.task = asyncio.create_task(_room_ticker(room))
+                elif kind == 'ping':
+                    if set(raw) != {'type', 'client_time'} or type(raw.get('client_time')) not in (int, float) or not math.isfinite(raw['client_time']):
+                        raise InputError('invalid ping message')
+                    await emit({'type': 'pong', 'client_time': raw['client_time']})
+                else:
+                    raise InputError('unknown message type')
+            except (InputError, RoomError, PermissionError, ValueError, KeyError) as error:
+                await emit({'type': 'error', 'message': str(error)[:180]})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        room.subscribers.pop(token, None)
+        room.disconnect(token)
+        if not room.subscribers and room.task is not None:
+            task = room.task
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        logger.bind(room_id=room.id, player=room.seat(token).player).info('room_socket_closed')
 
 def _valid_origin(websocket: WebSocket) -> bool:
     # Browser WebSockets send an Origin. Require an exact same-host origin.

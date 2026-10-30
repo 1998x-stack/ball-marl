@@ -9,14 +9,14 @@
     selected: false, keys: new Set(), mouse: {active:false,x:0,y:0},
     touch: {active:false,x:0,y:0}, sendTimer: null, sound:false, audio:null,
     cam: {x:25,y:25}, lastEvents: new Set(), toastTimeout:null,
-    wasAlive:true, frameCounter:0, initializedCamera:false
+    wasAlive:true, frameCounter:0, initializedCamera:false, room:null, replayMode:false, replayFrames:[], replayIndex:0, replayTimer:null
   };
   const MAX_DPR = 2;
   const colors = {blue:'#7aafff', red:'#ff787d', lime:'#c6f27b', bg:'#0d1920'};
   const clamp = (n,a,b) => Math.max(a, Math.min(b,n));
   const lerp = (a,b,t) => a+(b-a)*t;
   const fmt = value => Math.round(value||0).toLocaleString('en-US');
-  const playerTeam = owner => owner.startsWith('team_0/') ? 0 : owner.startsWith('team_1/') ? 1 : -1;
+  const playerTeam = owner => {if(owner==='pellet')return -1;const own=state.frame?.player?.id?.split('/')[0]||'team_0';return owner.startsWith(own+'/')?0:1;};
   const now = () => performance.now();
 
   function toast(text) {
@@ -47,6 +47,7 @@
     } catch { /* Audio unavailable; gameplay is unaffected. */ }
   }
   function closeSocket() {
+    stopReplay();
     if (state.socket) {
       const old = state.socket;
       state.socket = null;
@@ -56,14 +57,19 @@
     if (state.sendTimer !== null) {clearInterval(state.sendTimer); state.sendTimer = null;}
     state.keys.clear(); state.mouse.active=false; state.touch.active=false;
   }
-  function connect() {
+  function connect(room=null) {
+    state.room=room;
+    if(room){try{sessionStorage.setItem('ball-marl-room-v1',JSON.stringify(room));}catch{/* local storage disabled */}}
     closeSocket();
     $('playButton').disabled = true;
     $('playButton').querySelector('span').textContent = '正在连接引擎…';
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${scheme}://${location.host}/ws/play?mode=${encodeURIComponent(state.mode)}`);
+    const endpoint=room?`/ws/rooms/${room.room_id}`:
+      `/ws/play?mode=${encodeURIComponent(state.mode)}`;
+    const ws = new WebSocket(`${scheme}://${location.host}${endpoint}`);
     state.socket = ws;
     ws.onopen = () => {
+      if(room)ws.send(JSON.stringify({type:'auth',token:room.token}));
       state.frame=state.previous=null; state.lastEvents.clear(); state.wasAlive=true;
       state.initializedCamera=false;
       $('startOverlay').classList.add('hidden'); $('resultOverlay').classList.add('hidden');
@@ -72,7 +78,7 @@
       connectionStatus(true, '本地引擎在线');
       state.sendTimer=setInterval(sendInput, 80);
       sendInput();
-      toast('连接成功 · 吞噬资源，获得质量');
+      toast(room?'房间连接成功 · 分享房间码与朋友对战':'连接成功 · 吞噬资源，获得质量');
     };
     ws.onmessage = event => {
       let message;
@@ -113,7 +119,7 @@
     return [0,0];
   }
   function sendInput() {
-    if (!state.frame || state.frame.paused || state.frame.finished) return;
+    if (!state.frame || state.frame.paused || state.frame.finished || state.replayMode) return;
     send({type:'input',move:movement(),split:state.keys.has(' ') || state.keys.has('split-button'),
       eject:state.keys.has('e') || state.keys.has('eject-button')});
   }
@@ -136,11 +142,11 @@
       const row=document.createElement('div');row.className='event-item';
       const icon=document.createElement('span');icon.className='event-symbol';icon.textContent=glyph;
       const msg=document.createElement('span');
-      msg.textContent=`${event.actor === 'team_0/player_0' ? '你' : event.actor?.startsWith('team_0/') ? '队友' : '对手'} · ${name}${event.mass ? ' '+fmt(event.mass) : ''}`;
+      msg.textContent=`${event.actor === state.frame?.player?.id ? '你' : event.actor && playerTeam(event.actor)===0 ? '队友' : '对手'} · ${name}${event.mass ? ' '+fmt(event.mass) : ''}`;
       const step=document.createElement('small');step.textContent=`T${String(event.tick).padStart(3,'0')}`;
       row.append(icon,msg,step);activity.prepend(row);
       while(activity.children.length>5)activity.lastChild.remove();
-      if (event.actor==='team_0/player_0' && event.type==='consume')playTone(520,.055);
+      if (event.actor===state.frame?.player?.id && event.type==='consume')playTone(520,.055);
     }
   }
   function consumeFrame(frame) {
@@ -172,6 +178,15 @@
     $('playerMass').textContent=fmt(frame.player.mass);
     $('fragmentCount').textContent=String(frame.player.fragments).padStart(2,'0');
     $('botCount').textContent=String(frame.bots);
+    $('resultReplayButton').hidden=!frame.room_id;
+    if(frame.room_id){
+      $('roomLivebar').hidden=false;
+      $('roomLiveInfo').textContent=`房间 ${frame.room_id.toUpperCase()} · ${frame.players_online} 人在线 · AI: ${frame.bot_type}`;
+      $('showReplayButton').hidden=!frame.finished;
+      if(state.room){state.room.replay_id=frame.replay_id;state.room.replay_token=frame.replay_token;}
+    }else{$('roomLivebar').hidden=true;}
+    $('pauseButton').disabled=!!frame.room_id&&!frame.is_host;
+    $('restartButton').disabled=!!frame.room_id&&!frame.is_host;
     $('aliveStatus').textContent=frame.player.alive?'ALIVE':'ELIMINATED';
     $('aliveStatus').style.color=frame.player.alive?'var(--lime)':'var(--red)';
     $('splitButton').disabled=(!frame.abilities.split || frame.finished);
@@ -184,7 +199,7 @@
     updateEvents(frame.event_feed);
     if (!frame.player.alive && state.wasAlive)toast('你已被吞噬 · 可以继续观战或重开');
     state.wasAlive=frame.player.alive;
-    if(frame.finished && !$('resultOverlay').dataset.shown) showResult(frame.outcome);
+    if(frame.finished && !state.replayMode && !$('resultOverlay').dataset.shown) showResult(frame.outcome);
   }
   function showResult(outcome){
     if(!outcome)return;
@@ -287,7 +302,7 @@
         const bx=prev?lerp(prev.x,ball.x,alpha):ball.x;
         const by=prev?lerp(prev.y,ball.y,alpha):ball.y;
         drawBall(ball,(bx-ox)*scale+w/2,(by-oy)*scale+h/2,scale,
-          ball.owner==='team_0/player_0',time);
+          ball.owner===data.player.id,time);
       }
       if(data.paused){ctx.fillStyle='#061017aa';ctx.fillRect(0,0,w,h);
         ctx.textAlign='center';ctx.fillStyle='#d1f1b3';ctx.font='900 32px system-ui';ctx.fillText('PAUSED',w/2,h/2);}
@@ -314,13 +329,117 @@
     ctx.moveTo(w/2,h/2+4);ctx.lineTo(w/2,h/2+10);ctx.stroke();
     requestAnimationFrame(draw);
   }
-  function resetSameSeed(){send({type:'restart',new_seed:false});$('resultOverlay').classList.add('hidden');$('resultOverlay').dataset.shown='';state.lastEvents.clear();$('activityFeed').replaceChildren();toast('重新开始 · 使用相同随机种子');}
-  function resetNewSeed(){send({type:'restart',new_seed:true});$('resultOverlay').classList.add('hidden');$('resultOverlay').dataset.shown='';state.lastEvents.clear();$('activityFeed').replaceChildren();toast('新比赛已开始');}
-  function togglePause(){if(state.frame && !state.frame.finished)send({type:'pause'});}
+  function resetSameSeed(){if(state.replayMode || (state.frame?.room_id&&!state.frame?.is_host))return;send({type:'restart',new_seed:false});$('resultOverlay').classList.add('hidden');$('resultOverlay').dataset.shown='';state.lastEvents.clear();$('activityFeed').replaceChildren();toast('重新开始 · 使用相同随机种子');}
+  function resetNewSeed(){if(state.replayMode || (state.frame?.room_id&&!state.frame?.is_host))return;send({type:'restart',new_seed:true});$('resultOverlay').classList.add('hidden');$('resultOverlay').dataset.shown='';state.lastEvents.clear();$('activityFeed').replaceChildren();toast('新比赛已开始');}
+  function togglePause(){if(!state.replayMode&&state.frame&&!state.frame.finished&&(!state.frame.room_id||state.frame.is_host))send({type:'pause'});}
+  async function apiRequest(endpoint, payload) {
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||`HTTP ${response.status}`);
+    return data;
+  }
+  function roomError(error){$('roomHint').textContent='操作失败：'+error.message;toast(error.message);}
+  async function createRoom(){
+    try{
+      $('createRoomButton').disabled=true;
+      const room=await apiRequest('/api/rooms',{mode:state.mode,bot:$('botSelector').value});
+      $('roomHint').textContent=`已创建房间 ${room.room_id}，可分享给其他玩家。`;
+      $('roomCodeInput').value=room.room_id;
+      connect(room);
+    }catch(e){roomError(e);}finally{$('createRoomButton').disabled=false;}
+  }
+  async function joinRoom(){
+    try{
+      const id=$('roomCodeInput').value.trim().toLowerCase();
+      if(!/^[a-f0-9]{16}$/.test(id))throw new Error('请输入有效的 16 位房间码');
+      const choice=$('teamChoice').value;
+      const room=await apiRequest(`/api/rooms/${id}/join`,choice===''?{}:{team:Number(choice)});
+      state.mode=room.mode;
+      connect(room);
+    }catch(e){roomError(e);}
+  }
+  async function loadBots(){
+    try{
+      const response=await fetch('/api/bots');if(!response.ok)return;
+      const available=(await response.json()).available||[];
+      for(const name of available.filter(id=>id!=='scripted')){
+        const opt=document.createElement('option');opt.value=name;opt.textContent=`MAPPO · ${name}`;$('botSelector').append(opt);
+      }
+    }catch{ /* Backend may be disconnected before starting. */ }
+  }
+  function stopReplay(){
+    if(state.replayTimer!==null){clearInterval(state.replayTimer);state.replayTimer=null;}
+    state.replayMode=false;state.replayFrames=[];
+    $('replayBar').hidden=true;
+  }
+  function displayReplayFrame(index){
+    if(!state.replayFrames.length)return;
+    state.replayIndex=clamp(index,0,state.replayFrames.length-1);
+    $('replayRange').value=state.replayIndex;
+    $('replayTime').textContent=`${state.replayIndex} / ${state.replayFrames.length-1}`;
+    consumeFrame(state.replayFrames[state.replayIndex]);
+  }
+  async function showReplay(){
+    if(!state.room?.replay_id||!state.frame?.finished)return;
+    try{
+      $('showReplayButton').disabled=true;
+      const replay_id=state.room.replay_id;
+      const liveFrame=state.frame;
+      const viewer=state.frame.player.id;
+      const headers={'X-Replay-Token':state.room.replay_token};
+      let frames=[];let count=0;
+      do{
+        const response=await fetch(`/api/replays/${replay_id}/frames?viewer=${encodeURIComponent(viewer)}&start=${count}&limit=100`,{headers});
+        const data=await response.json();if(!response.ok)throw new Error(data.detail||'回放校验失败');
+        if(!data.verified)throw new Error('回放尚未验证');
+        frames.push(...data.frames.filter((f,i)=>!frames.length||f.tick!==frames[frames.length-1].tick));
+        count=frames.at(-1)?.tick+1||0;
+        if(count>data.total_ticks)break;
+      }while(count<=state.frame.tick);
+      state.replayFrames=frames.map(frame=>({...frame,room_id:liveFrame.room_id,
+        replay_id:liveFrame.replay_id,replay_token:liveFrame.replay_token,
+        players_online:liveFrame.players_online,is_host:liveFrame.is_host,bot_type:liveFrame.bot_type}));
+      frames=state.replayFrames;
+      state.replayMode=true;
+      $('resultOverlay').classList.add('hidden');
+      $('replayBar').hidden=false;
+      $('replayRange').max=String(frames.length-1);
+      displayReplayFrame(0);
+      $('replayPlayPause').textContent='播放';
+      toast(`回放校验通过 · ${frames.length-1} 个策略步`);
+    }catch(e){toast('回放不可用：'+e.message);}finally{$('showReplayButton').disabled=false;}
+  }
+  function toggleReplay(){
+    if(state.replayTimer!==null){clearInterval(state.replayTimer);state.replayTimer=null;$('replayPlayPause').textContent='播放';return;}
+    $('replayPlayPause').textContent='暂停';
+    state.replayTimer=setInterval(()=>{
+      if(state.replayIndex>=state.replayFrames.length-1){toggleReplay();return;}
+      displayReplayFrame(state.replayIndex+1);
+    },200);
+  }
+  $('createRoomButton').addEventListener('click',createRoom);
+  $('joinRoomButton').addEventListener('click',joinRoom);
+  $('copyRoomButton').addEventListener('click',()=>{
+    if(state.room?.room_id)navigator.clipboard?.writeText(state.room.room_id).then(()=>toast('房间码已复制'),()=>toast(state.room.room_id));
+  });
+  $('showReplayButton').addEventListener('click',showReplay);
+  $('resultReplayButton').addEventListener('click',showReplay);
+  $('replayPlayPause').addEventListener('click',toggleReplay);
+  $('replayRange').addEventListener('input',e=>{if(state.replayTimer!==null)toggleReplay();displayReplayFrame(Number(e.target.value));});
+  $('replayExit').addEventListener('click',()=>{const last=state.replayFrames.at(-1);stopReplay();if(last){$('resultOverlay').dataset.shown='';consumeFrame(last);}else $('startOverlay').classList.remove('hidden');});
+  try{
+    const last=JSON.parse(sessionStorage.getItem('ball-marl-room-v1')||'null');
+    if(last && /^[a-f0-9]{16}$/.test(last.room_id) && typeof last.token==='string'){
+      $('rejoinRoomButton').hidden=false;
+      $('rejoinRoomButton').textContent=`恢复上次房间 · ${last.room_id.toUpperCase()}`;
+      $('rejoinRoomButton').addEventListener('click',()=>connect(last));
+    }
+  }catch{/* ignore invalid browser state */}
+  loadBots();
   document.querySelectorAll('.mode-option').forEach(button=>button.addEventListener('click',()=>{
     state.mode=button.dataset.mode;document.querySelectorAll('.mode-option').forEach(b=>b.classList.toggle('selected',b===button));
   }));
-  $('playButton').addEventListener('click',connect);
+  $('playButton').addEventListener('click',()=>connect());
   $('pauseButton').addEventListener('click',togglePause);
   $('restartButton').addEventListener('click',resetSameSeed);
   $('splitButton').addEventListener('click',()=>pressAbility('split'));
@@ -334,10 +453,11 @@
   $('helpGotIt').addEventListener('click',()=>$('helpOverlay').classList.add('hidden'));
   $('soundButton').addEventListener('click',()=>{state.sound=!state.sound;$('soundButton').style.color=state.sound?'var(--lime)':'';toast(state.sound?'音效已打开':'音效已关闭');});
   document.addEventListener('keydown',e=>{
+    if(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)return;
     const key=e.key.toLowerCase();
     if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(key))e.preventDefault();
     if(!e.repeat && key==='p'){togglePause();return;}
-    if(!e.repeat && key==='r' && state.frame){resetSameSeed();return;}
+    if(!e.repeat && key==='r' && state.frame && !state.replayMode){resetSameSeed();return;}
     if(!e.repeat && key==='escape')$('helpOverlay').classList.add('hidden');
     state.keys.add(key);sendInput();
   });

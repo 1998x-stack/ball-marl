@@ -100,3 +100,7 @@ E to eject, P to pause, R to restart. Loguru JSONL logs are written under
 See [game architecture, controls, security boundaries and testing](docs/WEB_ARCADE.md).
 This is a **local, unauthenticated research simulation**, not public multiplayer
 and not an official game implementation. Existing training API remains unchanged.
+
+### V0.4: Multiplayer rooms, model AI and verified replays
+
+The web frontend additionally supports optional multi-human room codes and a frozen MAPPO AI checkpoint option, with a server-authoritative deterministic replay system. See [docs/WEB_MULTIPLAYER_V04.md](docs/WEB_MULTIPLAYER_V04.md) for room lifecycle, replay integrity, security scope and model-training commands. This remains a local research sandbox, **not** a publicly hosted multiplayer service.
